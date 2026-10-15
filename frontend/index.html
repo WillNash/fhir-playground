@@ -1,0 +1,1684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NZ FHIR Clinical Demo</title>
+<style>
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --nz-green: #007A4D;      /* NZ health green */
+  --nz-dark:  #1A3C34;
+  --nz-teal:  #00857C;
+  --nz-light: #E8F5F0;
+  --nz-blue:  #1B4F8A;
+  --fhir-orange: #E8610A;
+  --fhir-light:  #FEF0E8;
+  --border: #CBD5E1;
+  --text: #1E293B;
+  --muted: #64748B;
+  --danger: #DC2626;
+  --warn:   #D97706;
+  --success: #059669;
+  --bg: #F8FAFC;
+  --card: #FFFFFF;
+  --radius: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.08);
+  --shadow-lg: 0 4px 16px rgba(0,0,0,.12);
+  --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+a { color: var(--nz-teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ===== Layout ===== */
+.app-shell { display: flex; flex-direction: column; min-height: 100vh; }
+
+/* Header */
+.header {
+  background: var(--nz-dark);
+  color: white;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 56px;
+  position: sticky; top: 0; z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.header-logo { font-size: 18px; font-weight: 700; letter-spacing: -.3px; display: flex; align-items: center; gap: 8px; }
+.logo-badge { background: var(--nz-green); border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+.header-nav { display: flex; gap: 4px; margin-left: auto; }
+.nav-btn {
+  background: transparent; border: none; color: rgba(255,255,255,.7);
+  padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  transition: all .15s;
+}
+.nav-btn:hover, .nav-btn.active { background: rgba(255,255,255,.15); color: white; }
+.nav-btn.active { font-weight: 600; }
+.header-stats { font-size: 12px; color: rgba(255,255,255,.6); margin-left: 16px; padding-left: 16px; border-left: 1px solid rgba(255,255,255,.2); white-space: nowrap; }
+
+/* Page container */
+.page { display: none; padding: 24px; max-width: 1200px; margin: 0 auto; width: 100%; }
+.page.active { display: block; }
+
+/* Cards */
+.card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border); }
+.card-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+.card-header h2 { font-size: 15px; font-weight: 600; }
+.card-body { padding: 20px; }
+.card-footer { padding: 12px 20px; border-top: 1px solid var(--border); background: #FAFAFA; border-radius: 0 0 var(--radius) var(--radius); display: flex; gap: 8px; align-items: center; }
+
+/* Section heading inside forms */
+.section-title {
+  font-size: 12px; font-weight: 700; letter-spacing: .8px;
+  text-transform: uppercase; color: var(--nz-teal);
+  padding: 12px 0 6px;
+  border-bottom: 2px solid var(--nz-light);
+  margin-bottom: 12px;
+}
+
+/* Forms */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.form-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.span-2 { grid-column: span 2; }
+.span-3 { grid-column: span 3; }
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+label { font-size: 12px; font-weight: 600; color: var(--muted); }
+label .req { color: var(--danger); }
+input[type=text], input[type=date], input[type=email], input[type=tel], input[type=number],
+select, textarea {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: var(--font);
+  width: 100%;
+  color: var(--text);
+  transition: border-color .15s, box-shadow .15s;
+  background: white;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--nz-teal);
+  box-shadow: 0 0 0 3px rgba(0, 133, 124, .12);
+}
+textarea { resize: vertical; min-height: 80px; }
+input[readonly] { background: #F1F5F9; color: var(--muted); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 6px; border: none;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all .15s; white-space: nowrap;
+}
+.btn-primary { background: var(--nz-green); color: white; }
+.btn-primary:hover { background: var(--nz-dark); }
+.btn-secondary { background: white; color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover { background: #F1F5F9; }
+.btn-fhir { background: var(--fhir-orange); color: white; }
+.btn-fhir:hover { background: #C0510A; }
+.btn-danger { background: var(--danger); color: white; }
+.btn-danger:hover { background: #B91C1C; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Tags / chips */
+.chip-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--nz-light); color: var(--nz-dark);
+  border: 1px solid #B2DDD1; border-radius: 20px;
+  padding: 3px 10px; font-size: 12px; font-weight: 500;
+}
+.chip.med { background: #EFF6FF; border-color: #BFDBFE; color: var(--nz-blue); }
+.chip.allergy { background: #FEF2F2; border-color: #FECACA; color: #991B1B; }
+.chip.lab { background: #FFFBEB; border-color: #FDE68A; color: #92400E; }
+.chip-remove { cursor: pointer; font-weight: 700; opacity: .6; }
+.chip-remove:hover { opacity: 1; }
+
+/* Dynamic list rows */
+.dyn-row {
+  display: flex; gap: 8px; align-items: flex-end;
+  padding: 10px; background: #F8FAFC; border: 1px solid var(--border);
+  border-radius: 6px; margin-bottom: 8px;
+}
+.dyn-row .form-group { flex: 1; }
+
+/* Alerts */
+.alert {
+  padding: 10px 14px; border-radius: 6px; font-size: 13px;
+  display: flex; align-items: center; gap: 8px; margin-bottom: 12px;
+}
+.alert-success { background: #ECFDF5; border: 1px solid #6EE7B7; color: #065F46; }
+.alert-error   { background: #FEF2F2; border: 1px solid #FECACA; color: #991B1B; }
+.alert-info    { background: #EFF6FF; border: 1px solid #BFDBFE; color: #1E40AF; }
+.alert-warn    { background: #FFFBEB; border: 1px solid #FDE68A; color: #92400E; }
+
+/* Records table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; padding: 10px 12px; font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid var(--border); white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:hover td { background: #F8FAFC; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+.badge-amb { background: #ECFDF5; color: #065F46; }
+.badge-inp { background: #EFF6FF; color: #1E40AF; }
+.badge-emer { background: #FEF2F2; color: #991B1B; }
+.badge-tele { background: #F5F3FF; color: #5B21B6; }
+
+/* FHIR viewer */
+.fhir-panel { background: #0F172A; border-radius: var(--radius); overflow: hidden; }
+.fhir-panel-header { padding: 10px 16px; background: #1E293B; display: flex; align-items: center; gap: 8px; font-size: 12px; color: #94A3B8; }
+.fhir-panel-header .type-badge { background: var(--fhir-orange); color: white; border-radius: 4px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
+pre.fhir-json {
+  padding: 16px; overflow: auto; max-height: 600px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px; line-height: 1.6; color: #E2E8F0;
+  white-space: pre; tab-size: 2;
+}
+/* JSON syntax highlight */
+.jk { color: #7DD3FC; }   /* key */
+.jv { color: #A7F3D0; }   /* value string */
+.jn { color: #FCA5A5; }   /* null */
+.jb { color: #F59E0B; }   /* bool */
+.ji { color: #C4B5FD; }   /* number */
+
+/* Spinner */
+.spinner { width: 20px; height: 20px; border: 3px solid rgba(0,133,124,.3); border-top-color: var(--nz-teal); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Empty state */
+.empty-state { text-align: center; padding: 48px 24px; color: var(--muted); }
+.empty-state svg { opacity: .3; margin-bottom: 12px; }
+.empty-state h3 { font-size: 16px; margin-bottom: 4px; }
+
+/* Tabs inside a card */
+.tab-bar { display: flex; gap: 2px; border-bottom: 1px solid var(--border); padding: 0 20px; background: #F8FAFC; }
+.tab-item { padding: 10px 16px; font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -1px; }
+.tab-item.active { color: var(--nz-teal); border-bottom-color: var(--nz-teal); font-weight: 600; }
+.tab-panel { display: none; padding: 20px; }
+.tab-panel.active { display: block; }
+
+/* Vitals grid */
+.vitals-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.vital-card { background: var(--nz-light); border: 1px solid #B2DDD1; border-radius: 8px; padding: 10px 12px; }
+.vital-card label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px; }
+.vital-value { font-size: 22px; font-weight: 700; color: var(--nz-dark); }
+.vital-unit { font-size: 11px; color: var(--muted); }
+
+/* Two-col layout */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 768px) { .two-col { grid-template-columns: 1fr; } .form-grid-3 { grid-template-columns: 1fr; } }
+
+/* NHI pill */
+.nhi-pill { display: inline-flex; align-items: center; gap: 4px; background: var(--nz-dark); color: white; border-radius: 12px; padding: 2px 10px; font-size: 11px; font-weight: 700; font-family: monospace; }
+
+/* Fieldset-style collapsible sections */
+.collapsible { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; overflow: hidden; }
+.collapsible-header { padding: 12px 16px; background: #F8FAFC; display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.collapsible-header:hover { background: var(--nz-light); }
+.collapsible-header h3 { font-size: 14px; font-weight: 600; flex: 1; }
+.collapsible-header .caret { transition: transform .2s; }
+.collapsible-header.open .caret { transform: rotate(180deg); }
+.collapsible-body { padding: 16px; }
+.collapsible-body.hidden { display: none; }
+
+/* Record detail modal-ish panel */
+.detail-panel { position: fixed; top: 0; right: -600px; width: 580px; height: 100vh; background: white; box-shadow: -4px 0 20px rgba(0,0,0,.2); z-index: 200; transition: right .3s ease; overflow-y: auto; }
+.detail-panel.open { right: 0; }
+.detail-panel-header { padding: 16px 20px; background: var(--nz-dark); color: white; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 10; }
+.detail-panel-header h2 { font-size: 15px; flex: 1; }
+.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 150; }
+.overlay.visible { display: block; }
+
+/* Progress / stepped indicator */
+.step-bar { display: flex; align-items: center; gap: 0; margin-bottom: 24px; }
+.step { display: flex; flex-direction: column; align-items: center; flex: 1; gap: 4px; }
+.step-num { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; background: #E2E8F0; color: var(--muted); }
+.step.done .step-num { background: var(--nz-green); color: white; }
+.step.active .step-num { background: var(--nz-teal); color: white; box-shadow: 0 0 0 4px rgba(0,133,124,.2); }
+.step-label { font-size: 11px; color: var(--muted); text-align: center; }
+.step.active .step-label { color: var(--nz-teal); font-weight: 600; }
+.step-line { flex: 1; height: 2px; background: #E2E8F0; margin-top: -14px; }
+.step-line.done { background: var(--nz-green); }
+</style>
+</head>
+<body>
+<div class="app-shell">
+
+<!-- ===== HEADER ===== -->
+<header class="header">
+  <div class="header-logo">
+    <span class="logo-badge">NZ</span>
+    FHIR Clinical Demo
+  </div>
+  <nav class="header-nav">
+    <button class="nav-btn active" onclick="showPage('page-home')">Dashboard</button>
+    <button class="nav-btn" onclick="showPage('page-form')">New Encounter</button>
+    <button class="nav-btn" onclick="showPage('page-records'); loadRecords()">Patient Records</button>
+    <button class="nav-btn" onclick="showPage('page-fhir'); loadFhirIndex()">FHIR Store</button>
+  </nav>
+  <div class="header-stats" id="header-stats">Loading...</div>
+</header>
+
+<!-- ===== OVERLAY ===== -->
+<div class="overlay" id="overlay" onclick="closeDetailPanel()"></div>
+
+<!-- ===== DETAIL PANEL ===== -->
+<div class="detail-panel" id="detail-panel">
+  <div class="detail-panel-header">
+    <h2 id="dp-title">Detail</h2>
+    <button class="btn btn-secondary btn-sm" onclick="closeDetailPanel()" style="color:white;background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.2)">Close</button>
+  </div>
+  <div id="dp-body" style="padding:20px;"></div>
+</div>
+
+<!-- ===== DASHBOARD ===== -->
+<main class="page active" id="page-home">
+  <div style="margin-bottom:24px;">
+    <h1 style="font-size:22px;font-weight:700;color:var(--nz-dark);">NZ FHIR Exploration Platform</h1>
+    <p style="color:var(--muted);margin-top:4px;">FHIR R4 &bull; NZ Base IG &bull; SNOMED-CT &bull; LOINC &bull; NZ Ethnicity &bull; NHI identifiers</p>
+  </div>
+
+  <div class="two-col" style="margin-bottom:24px;">
+    <div class="card">
+      <div class="card-header"><span style="font-size:20px;">🏥</span><h2>Clinical Records</h2></div>
+      <div class="card-body">
+        <div style="font-size:36px;font-weight:800;color:var(--nz-teal);" id="stat-records">—</div>
+        <div style="color:var(--muted);margin-top:4px;">Patient encounter records stored</div>
+        <div style="margin-top:16px;">
+          <button class="btn btn-primary" onclick="showPage('page-form')">New Encounter</button>
+          <button class="btn btn-secondary" onclick="showPage('page-records');loadRecords()">View All</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><span style="font-size:20px;">⚡</span><h2>FHIR Resources</h2></div>
+      <div class="card-body">
+        <div style="font-size:36px;font-weight:800;color:var(--fhir-orange);" id="stat-fhir">—</div>
+        <div style="color:var(--muted);margin-top:4px;">FHIR R4 resources persisted</div>
+        <div style="margin-top:16px;">
+          <button class="btn btn-fhir" onclick="showPage('page-fhir');loadFhirIndex()">Browse FHIR Store</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:24px;">
+    <div class="card-header"><h2>Platform Overview</h2></div>
+    <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:20px;">
+      <div>
+        <div style="font-weight:700;color:var(--nz-teal);margin-bottom:6px;">Data Entry</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.8;">
+          REDCap-style clinical forms<br/>
+          NZ NHI patient identification<br/>
+          NZ ethnicity level-2 coding<br/>
+          GP/PHO linkage<br/>
+          Vitals, labs, meds, allergies
+        </div>
+      </div>
+      <div>
+        <div style="font-weight:700;color:var(--nz-teal);margin-bottom:6px;">FHIR R4 Resources</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.8;">
+          Patient (NZ Base profile)<br/>
+          Encounter<br/>
+          Observation (vitals + labs)<br/>
+          Condition, MedicationStatement<br/>
+          AllergyIntolerance, Immunization<br/>
+          Composition (clinical note)
+        </div>
+      </div>
+      <div>
+        <div style="font-weight:700;color:var(--nz-teal);margin-bottom:6px;">Coding Systems</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.8;">
+          SNOMED-CT International<br/>
+          LOINC (vitals + labs)<br/>
+          NZ Ethnicity (Stats NZ)<br/>
+          NHI identifier system<br/>
+          NZ Medicines Terminology (NZMT)<br/>
+          UCUM units
+        </div>
+      </div>
+      <div>
+        <div style="font-weight:700;color:var(--nz-teal);margin-bottom:6px;">Standards</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.8;">
+          HL7 FHIR R4 (v4.0.1)<br/>
+          NZ Base IG profiles<br/>
+          Transaction Bundles<br/>
+          FHIR REST API<br/>
+          application/fhir+json
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Quick Start</h2></div>
+    <div class="card-body">
+      <ol style="padding-left:20px;line-height:2;font-size:13px;color:var(--muted);">
+        <li>Click <strong>New Encounter</strong> to enter clinical data for a patient</li>
+        <li>Fill in demographics, vitals, conditions, medications, and labs</li>
+        <li>Save the record — it is persisted as raw clinical JSON in SQLite</li>
+        <li>From the <strong>Patient Records</strong> list, click <strong>Convert to FHIR</strong></li>
+        <li>The system generates a FHIR R4 Transaction Bundle with all resources</li>
+        <li>Browse and search raw FHIR JSON in the <strong>FHIR Store</strong> tab</li>
+      </ol>
+    </div>
+  </div>
+</main>
+
+<!-- ===== NEW ENCOUNTER FORM ===== -->
+<main class="page" id="page-form">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+    <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">New Patient Encounter</h1>
+    <span style="color:var(--muted);font-size:13px;">All fields marked <span style="color:var(--danger)">*</span> are required</span>
+  </div>
+
+  <div id="form-alert"></div>
+
+  <form id="encounter-form" onsubmit="return false;">
+
+    <!-- === PATIENT DEMOGRAPHICS === -->
+    <div class="collapsible" id="sec-demo">
+      <div class="collapsible-header open" onclick="toggleSection('sec-demo')">
+        <span style="font-size:16px;">👤</span>
+        <h3>Patient Demographics</h3>
+        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="collapsible-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>NHI Number <span title="National Health Index">ℹ</span></label>
+            <input type="text" id="nhi_number" placeholder="ZZZ0016" maxlength="7" title="NHI format: 3 letters + 3 digits + 1 check digit (e.g. ZZZ0016)" style="font-family:monospace;text-transform:uppercase;"/>
+          </div>
+          <div class="form-group">
+            <label>Family Name <span class="req">*</span></label>
+            <input type="text" id="family_name" placeholder="Smith" required/>
+          </div>
+          <div class="form-group">
+            <label>Given Names <span class="req">*</span></label>
+            <input type="text" id="given_names" placeholder="John William" required/>
+          </div>
+          <div class="form-group">
+            <label>Date of Birth <span class="req">*</span></label>
+            <input type="date" id="date_of_birth" required/>
+          </div>
+          <div class="form-group">
+            <label>Sex <span class="req">*</span></label>
+            <select id="sex" required>
+              <option value="">Select...</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other / Indeterminate</option>
+              <option value="unknown">Unknown / Unspecified</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Gender Identity</label>
+            <input type="text" id="gender_identity" placeholder="e.g. Transgender woman"/>
+          </div>
+          <div class="form-group">
+            <label>Sex at Birth</label>
+            <select id="sex_at_birth">
+              <option value="">Not recorded</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other / Indeterminate</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top:16px;">Ethnicity (NZ Stats Level 4 — select all that apply)</div>
+        <div id="ethnicity-container" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;"></div>
+        <div id="ethnicity-selected" class="chip-list" style="margin-top:8px;"></div>
+
+        <div class="section-title" style="margin-top:16px;">Contact Details</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="tel" id="phone" placeholder="021 123 4567"/>
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="email" placeholder="john.smith@example.com"/>
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top:16px;">Address (NZ)</div>
+        <div class="form-grid">
+          <div class="form-group span-2">
+            <label>Street Address</label>
+            <input type="text" id="addr_street" placeholder="123 Main Street"/>
+          </div>
+          <div class="form-group">
+            <label>Suburb</label>
+            <input type="text" id="addr_suburb" placeholder="Ponsonby"/>
+          </div>
+          <div class="form-group">
+            <label>City</label>
+            <input type="text" id="addr_city" placeholder="Auckland"/>
+          </div>
+          <div class="form-group">
+            <label>Postcode</label>
+            <input type="text" id="addr_postcode" placeholder="1011" maxlength="4"/>
+          </div>
+          <div class="form-group">
+            <label>Region</label>
+            <select id="addr_region">
+              <option value="">Select region...</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- === GP / PRACTICE === -->
+    <div class="collapsible" id="sec-gp">
+      <div class="collapsible-header" onclick="toggleSection('sec-gp')">
+        <span style="font-size:16px;">🏪</span>
+        <h3>GP / PHO Details</h3>
+        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="collapsible-body hidden">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>GP Name</label>
+            <input type="text" id="gp_name" placeholder="Dr. Jane Wilson"/>
+          </div>
+          <div class="form-group">
+            <label>Practice Name</label>
+            <input type="text" id="gp_practice" placeholder="City Medical Centre"/>
+          </div>
+          <div class="form-group">
+            <label>PHO</label>
+            <input type="text" id="pho" placeholder="ProCare PHO"/>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- === ENCOUNTER === -->
+    <div class="collapsible" id="sec-enc">
+      <div class="collapsible-header open" onclick="toggleSection('sec-enc')">
+        <span style="font-size:16px;">📋</span>
+        <h3>Encounter Details</h3>
+        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="collapsible-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Encounter Date <span class="req">*</span></label>
+            <input type="date" id="encounter_date" required/>
+          </div>
+          <div class="form-group">
+            <label>Encounter Type <span class="req">*</span></label>
+            <select id="encounter_type" required>
+              <option value="ambulatory">Ambulatory / Outpatient</option>
+              <option value="inpatient">Inpatient</option>
+              <option value="emergency">Emergency</option>
+              <option value="telehealth">Telehealth</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Clinician Name</label>
+            <input type="text" id="clinician_name" placeholder="Dr. Sarah Lee"/>
+          </div>
+          <div class="form-group">
+            <label>Clinician Role</label>
+            <select id="clinician_role">
+              <option value="GP">General Practitioner</option>
+              <option value="NP">Nurse Practitioner</option>
+              <option value="RN">Registered Nurse</option>
+              <option value="SMO">Senior Medical Officer</option>
+              <option value="HO">House Officer</option>
+              <option value="Physio">Physiotherapist</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-group span-2">
+            <label>Presenting Complaint</label>
+            <textarea id="presenting_complaint" rows="2" placeholder="e.g. Chest tightness and shortness of breath for 2 days..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- === VITAL SIGNS === -->
+    <div class="collapsible" id="sec-vitals">
+      <div class="collapsible-header" onclick="toggleSection('sec-vitals')">
+        <span style="font-size:16px;">❤️</span>
+        <h3>Vital Signs</h3>
+        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="collapsible-body hidden">
+        <div class="vitals-grid">
+          <div class="form-group">
+            <label>Systolic BP (mmHg)</label>
+            <input type="number" id="v_sbp" placeholder="120" min="50" max="300" step="1"/>
+          </div>
+          <div class="form-group">
+            <label>Diastolic BP (mmHg)</label>
+            <input type="number" id="v_dbp" placeholder="80" min="30" max="200" step="1"/>
+          </div>
+          <div class="form-group">
+            <label>Heart Rate (bpm)</label>
+            <input type="number" id="v_hr" placeholder="72" min="20" max="300" step="1"/>
+          </div>
+          <div class="form-group">
+            <label>Resp Rate (/min)</label>
+            <input type="number" id="v_rr" placeholder="16" min="4" max="60" step="1"/>
+          </div>
+          <div class="form-group">
+            <label>Temperature (°C)</label>
+            <input type="number" id="v_temp" placeholder="37.0" min="32" max="42" step="0.1"/>
+          </div>
+          <div class="form-group">
+            <label>SpO2 (%)</label>
+            <input type="number" id="v_spo2" placeholder="98" min="50" max="100" step="1"/>
+          </div>
+          <div class="form-group">
+            <label>Weight (kg)</label>
+            <input type="number" id="v_weight" placeholder="70" min="1" max="500" step="0.1"/>
+          </div>
+          <div class="form-group">
+            <label>Height (cm)</label>
+            <input type="number" id="v_height" placeholder="170" min="30" max="300" step="0.5"/>
+          </div>
+          <div class="form-group">
+            <label>BMI (auto)</label>
+            <input type="number" id="v_bmi" placeholder="24.2" readonly/>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- === CONDITIONS === -->
+    <div class="collapsible" id="sec-cond">
+      <div class="collapsible-header" onclick="toggleSection('sec-cond')">
+        <span style="font-size:16px;">🩺</span>
+        <h3>Conditions / Problem List</h3>
+        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="collapsible-body hidden">
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;">
+          <div class="form-group" style="flex:2">
+            <label>Condition (SNOMED-CT)</label>
+            <select id="cond_code">
+              <option value="">Select condition...</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Status</label>
+            <select id="cond_status">
+              <option value="active">Active</option>
+              <option value="resolved">Resolved</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Onset Date</label>
+            <input type="date" id="cond_onset"/>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addCondition()" style="margin-bottom:1px;">+ Add</button>
+        </div>
+        <div id="conditions-list" class="chip-list"></div>
+      </div>
+    </div>
+
+    <!-- === MEDICATIONS === -->
+    <div class="collapsible" id="sec-meds">
+      <div class="collapsible-header" onclick="toggleSection('sec-meds')">
+        <span style="font-size:16px;">💊</span>
+        <h3>Medications</h3>
+        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="collapsible-body hidden">
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap;">
+          <div class="form-group" style="flex:2;min-width:200px;">
+            <label>Medication (SNOMED / NZMT)</label>
+            <select id="med_code">
+              <option value="">Select medication...</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;min-width:100px;">
+            <label>Dose</label>
+            <input type="text" id="med_dose" placeholder="500mg"/>
+          </div>
+          <div class="form-group" style="flex:1;min-width:100px;">
+            <label>Frequency</label>
+            <select id="med_freq">
+              <option value="">Select...</option>
+              <option>Once daily</option>
+              <option>Twice daily</option>
+              <option>Three times daily</option>
+              <option>Four times daily</option>
+              <option>As required</option>
+              <option>Weekly</option>
+              <option>Fortnightly</option>
+              <option>Monthly</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;min-width:80px;">
+            <label>Route</label>
+            <select id="med_route">
+              <option value="">Select...</option>
+              <option>Oral</option>
+              <option>Inhaled</option>
+              <option>Topical</option>
+              <option>IV</option>
+              <option>IM</option>
+              <option>SC</option>
+              <option>Sublingual</option>
+              <option>Rectal</option>
+              <option>Nasal</option>
+              <option>Ophthalmic</option>
+            </select>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addMedication()" style="margin-bottom:1px;">+ Add</button>
+        </div>
+        <div id="medications-list" class="chip-list"></div>
+      </div>
+    </div>
+
+    <!-- === ALLERGIES === -->
+    <div class="collapsible" id="sec-allergy">
+      <div class="collapsible-header" onclick="toggleSection('sec-allergy')">
+        <span style="font-size:16px;">⚠️</span>
+        <h3>Allergies & Intolerances</h3>
+        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="collapsible-body hidden">
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap;">
+          <div class="form-group" style="flex:2;min-width:180px;">
+            <label>Allergen (SNOMED-CT)</label>
+            <select id="allergy_code">
+              <option value="">Select allergen...</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;min-width:120px;">
+            <label>Reaction</label>
+            <input type="text" id="allergy_reaction" placeholder="e.g. Urticaria"/>
+          </div>
+          <div class="form-group" style="flex:1;min-width:100px;">
+            <label>Severity</label>
+            <select id="allergy_severity">
+              <option value="">Unknown</option>
+              <option value="mild">Mild</option>
+              <option value="moderate">Moderate</option>
+              <option value="severe">Severe</option>
+            </select>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addAllergy()" style="margin-bottom:1px;">+ Add</button>
+        </div>
+        <div id="allergies-list" class="chip-list"></div>
+      </div>
+    </div>
+
+    <!-- === LAB RESULTS === -->
+    <div class="collapsible" id="sec-labs">
+      <div class="collapsible-header" onclick="toggleSection('sec-labs')">
+        <span style="font-size:16px;">🧪</span>
+        <h3>Laboratory Results</h3>
+        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="collapsible-body hidden">
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap;">
+          <div class="form-group" style="flex:2;min-width:200px;">
+            <label>Test (LOINC)</label>
+            <select id="lab_code">
+              <option value="">Select test...</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:90px;">
+            <label>Value</label>
+            <input type="number" id="lab_value" placeholder="0.0" step="any"/>
+          </div>
+          <div class="form-group" style="min-width:80px;">
+            <label>Unit</label>
+            <input type="text" id="lab_unit" placeholder="mmol/L" readonly/>
+          </div>
+          <div class="form-group" style="min-width:80px;">
+            <label>Flag</label>
+            <select id="lab_flag">
+              <option value="">Normal</option>
+              <option value="H">H (High)</option>
+              <option value="L">L (Low)</option>
+              <option value="HH">HH (Critical High)</option>
+              <option value="LL">LL (Critical Low)</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:130px;">
+            <label>Collected Date</label>
+            <input type="date" id="lab_date"/>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addLab()" style="margin-bottom:1px;">+ Add</button>
+        </div>
+        <div id="labs-list" class="chip-list"></div>
+      </div>
+    </div>
+
+    <!-- === IMMUNIZATIONS === -->
+    <div class="collapsible" id="sec-imm">
+      <div class="collapsible-header" onclick="toggleSection('sec-imm')">
+        <span style="font-size:16px;">💉</span>
+        <h3>Immunizations</h3>
+        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="collapsible-body hidden">
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap;">
+          <div class="form-group" style="flex:2;min-width:200px;">
+            <label>Vaccine</label>
+            <select id="imm_code">
+              <option value="">Select vaccine...</option>
+              <option value="33879002|Influenza vaccine">Influenza (annual flu)</option>
+              <option value="28523008|COVID-19 vaccine">COVID-19 vaccine</option>
+              <option value="407737004|Pneumococcal vaccine">Pneumococcal (Prevenar)</option>
+              <option value="860591000000103|Shingles vaccine">Shingles (Shingrix)</option>
+              <option value="82622004|BCG vaccine">BCG (Tuberculosis)</option>
+              <option value="407614003|MMR vaccine">MMR (Measles/Mumps/Rubella)</option>
+              <option value="125691004|Hepatitis B vaccine">Hepatitis B</option>
+              <option value="14745005|DTaP vaccine">DTaP (Diphtheria/Tetanus/Pertussis)</option>
+              <option value="449999000|HPV vaccine">HPV (Gardasil 9)</option>
+            </select>
+          </div>
+          <div class="form-group" style="min-width:130px;">
+            <label>Date Given</label>
+            <input type="date" id="imm_date"/>
+          </div>
+          <div class="form-group" style="min-width:120px;">
+            <label>Site</label>
+            <select id="imm_site">
+              <option value="">Select...</option>
+              <option>Left deltoid</option>
+              <option>Right deltoid</option>
+              <option>Left thigh</option>
+              <option>Right thigh</option>
+              <option>Left gluteal</option>
+              <option>Oral</option>
+              <option>Intranasal</option>
+            </select>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addImmunization()" style="margin-bottom:1px;">+ Add</button>
+        </div>
+        <div id="immunizations-list" class="chip-list"></div>
+      </div>
+    </div>
+
+    <!-- === SOCIAL HISTORY === -->
+    <div class="collapsible" id="sec-social">
+      <div class="collapsible-header" onclick="toggleSection('sec-social')">
+        <span style="font-size:16px;">🌿</span>
+        <h3>Social History</h3>
+        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="collapsible-body hidden">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Smoking Status (SNOMED-CT)</label>
+            <select id="smoking_code">
+              <option value="">Not recorded</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Pack Years</label>
+            <input type="number" id="pack_years" placeholder="10" min="0" step="0.5"/>
+          </div>
+          <div class="form-group">
+            <label>Alcohol Use</label>
+            <select id="alcohol_code">
+              <option value="">Not recorded</option>
+              <option value="219006">Current drinker</option>
+              <option value="228276006">Occasional drinker</option>
+              <option value="228274009">Non-drinker</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Alcohol units/week</label>
+            <input type="number" id="alcohol_units" placeholder="0" min="0" step="1"/>
+          </div>
+          <div class="form-group">
+            <label>Occupation</label>
+            <input type="text" id="occupation" placeholder="Teacher"/>
+          </div>
+          <div class="form-group">
+            <label>Lives Alone</label>
+            <select id="lives_alone">
+              <option value="">Unknown</option>
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- === CLINICAL NOTES === -->
+    <div class="collapsible" id="sec-notes">
+      <div class="collapsible-header" onclick="toggleSection('sec-notes')">
+        <span style="font-size:16px;">📝</span>
+        <h3>Clinical Notes</h3>
+        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="collapsible-body hidden">
+        <div class="two-col">
+          <div class="form-group">
+            <label>Examination Findings</label>
+            <textarea id="note_exam" rows="4" placeholder="General appearance, systems review..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>Assessment & Plan</label>
+            <textarea id="note_plan" rows="4" placeholder="Impression, management plan, follow-up..."></textarea>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:12px;">
+          <label>Other Notes</label>
+          <textarea id="note_other" rows="3" placeholder="Additional clinical information..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Submit -->
+    <div style="display:flex;gap:12px;padding:16px 0;align-items:center;">
+      <button type="button" class="btn btn-primary" onclick="submitRecord()" id="submit-btn">
+        Save Encounter Record
+      </button>
+      <button type="button" class="btn btn-secondary" onclick="resetForm()">Clear Form</button>
+      <span id="submit-spinner" style="display:none;"><span class="spinner"></span></span>
+    </div>
+
+  </form>
+</main>
+
+<!-- ===== RECORDS LIST ===== -->
+<main class="page" id="page-records">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+    <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">Patient Records</h1>
+    <div style="display:flex;gap:8px;flex:1;flex-wrap:wrap;">
+      <input type="text" id="search-family" placeholder="Search by surname..." style="max-width:200px;"/>
+      <input type="text" id="search-nhi" placeholder="NHI number..." style="max-width:140px;font-family:monospace;"/>
+      <input type="date" id="search-date" style="max-width:160px;"/>
+      <button class="btn btn-secondary btn-sm" onclick="loadRecords()">Search</button>
+      <button class="btn btn-primary btn-sm" onclick="showPage('page-form')">+ New Encounter</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="table-wrap">
+      <table id="records-table">
+        <thead>
+          <tr>
+            <th>NHI</th>
+            <th>Patient</th>
+            <th>DOB</th>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Complaint</th>
+            <th>FHIR</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="records-tbody">
+          <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- ===== FHIR STORE ===== -->
+<main class="page" id="page-fhir">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+    <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">FHIR Store</h1>
+    <div style="display:flex;gap:8px;flex:1;flex-wrap:wrap;">
+      <select id="fhir-type-filter" style="max-width:180px;">
+        <option value="">All resource types</option>
+        <option>Bundle</option>
+        <option>Patient</option>
+        <option>Encounter</option>
+        <option>Observation</option>
+        <option>Condition</option>
+        <option>MedicationStatement</option>
+        <option>AllergyIntolerance</option>
+        <option>Immunization</option>
+        <option>Composition</option>
+      </select>
+      <input type="text" id="fhir-name-filter" placeholder="Patient name..." style="max-width:180px;"/>
+      <input type="text" id="fhir-nhi-filter" placeholder="NHI..." style="max-width:130px;font-family:monospace;"/>
+      <input type="date" id="fhir-from-filter" style="max-width:150px;"/>
+      <input type="date" id="fhir-to-filter" style="max-width:150px;"/>
+      <button class="btn btn-secondary btn-sm" onclick="loadFhirIndex()">Search</button>
+    </div>
+  </div>
+
+  <div id="fhir-count-bar" style="font-size:13px;color:var(--muted);margin-bottom:8px;"></div>
+  <div class="card" style="margin-bottom:20px;">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>ID</th>
+            <th>Patient</th>
+            <th>NHI</th>
+            <th>Date</th>
+            <th>Summary</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="fhir-tbody">
+          <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- FHIR JSON viewer -->
+  <div class="card" id="fhir-viewer" style="display:none;">
+    <div class="card-header">
+      <span style="font-size:14px;font-weight:700;color:var(--fhir-orange);">FHIR JSON</span>
+      <span id="fhir-viewer-title" style="color:var(--muted);font-size:13px;font-family:monospace;"></span>
+      <button class="btn btn-secondary btn-sm" style="margin-left:auto;" onclick="copyFhirJson()">Copy JSON</button>
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('fhir-viewer').style.display='none'">Close</button>
+    </div>
+    <div class="fhir-panel">
+      <pre class="fhir-json" id="fhir-json-pre"></pre>
+    </div>
+  </div>
+</main>
+
+</div><!-- /app-shell -->
+
+<script>
+// ============================================================
+// State
+// ============================================================
+const API = '';  // same origin
+let refData = { conditions:{}, medications:{}, allergens:{}, smoking:{}, loinc:{}, ethnicity:{}, regions:[] };
+let formState = {
+  ethnicity_codes: [],
+  conditions: [],
+  medications: [],
+  allergies: [],
+  lab_results: [],
+  immunizations: [],
+};
+
+// ============================================================
+// Navigation
+// ============================================================
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  const map = { 'page-home':'Dashboard', 'page-form':'New Encounter', 'page-records':'Patient Records', 'page-fhir':'FHIR Store' };
+  document.querySelectorAll('.nav-btn').forEach(b => { if(b.textContent.trim() === map[id]) b.classList.add('active'); });
+  loadStats();
+}
+
+// ============================================================
+// Collapsible sections
+// ============================================================
+function toggleSection(id) {
+  const sec = document.getElementById(id);
+  const header = sec.querySelector('.collapsible-header');
+  const body = sec.querySelector('.collapsible-body');
+  header.classList.toggle('open');
+  body.classList.toggle('hidden');
+}
+
+// ============================================================
+// API helpers
+// ============================================================
+async function apiGet(path) {
+  const r = await fetch(API + path);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function apiPost(path, body) {
+  const r = await fetch(API + path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function apiDelete(path) {
+  const r = await fetch(API + path, { method:'DELETE' });
+  return r.ok;
+}
+
+// ============================================================
+// Reference data + form population
+// ============================================================
+async function loadRefData() {
+  try {
+    const [conds, meds, allergens, smoking, loinc, eth, regions] = await Promise.all([
+      apiGet('/api/ref/snomed/conditions'),
+      apiGet('/api/ref/snomed/medications'),
+      apiGet('/api/ref/snomed/allergens'),
+      apiGet('/api/ref/snomed/smoking'),
+      apiGet('/api/ref/loinc/observations'),
+      apiGet('/api/ref/ethnicity'),
+      apiGet('/api/ref/regions'),
+    ]);
+    refData = { conditions: conds, medications: meds, allergens, smoking, loinc, ethnicity: eth, regions };
+    populateDropdowns();
+  } catch(e) {
+    console.error('Failed to load ref data:', e);
+  }
+}
+
+function populateDropdowns() {
+  // Conditions
+  const cs = document.getElementById('cond_code');
+  Object.entries(refData.conditions).forEach(([code, display]) => {
+    const o = document.createElement('option');
+    o.value = code; o.textContent = `${display} (${code})`; cs.appendChild(o);
+  });
+
+  // Medications
+  const ms = document.getElementById('med_code');
+  Object.entries(refData.medications).forEach(([code, info]) => {
+    const o = document.createElement('option');
+    o.value = code; o.textContent = `${info.name} ${info.strength} (${code})`; ms.appendChild(o);
+  });
+
+  // Allergens
+  const as = document.getElementById('allergy_code');
+  Object.entries(refData.allergens).forEach(([code, display]) => {
+    const o = document.createElement('option');
+    o.value = `${code}|${display}`; o.textContent = display; as.appendChild(o);
+  });
+
+  // Labs
+  const ls = document.getElementById('lab_code');
+  Object.entries(refData.loinc).forEach(([code, info]) => {
+    const o = document.createElement('option');
+    o.value = code; o.textContent = `${info.display} (${code})`; ls.appendChild(o);
+  });
+  document.getElementById('lab_code').addEventListener('change', function() {
+    const info = refData.loinc[this.value];
+    document.getElementById('lab_unit').value = info ? (info.unit || '') : '';
+  });
+
+  // Smoking
+  const smk = document.getElementById('smoking_code');
+  Object.entries(refData.smoking).forEach(([code, display]) => {
+    const o = document.createElement('option');
+    o.value = `${code}|${display}`; o.textContent = display; smk.appendChild(o);
+  });
+
+  // Regions
+  const reg = document.getElementById('addr_region');
+  refData.regions.forEach(r => {
+    const o = document.createElement('option');
+    o.value = r; o.textContent = r; reg.appendChild(o);
+  });
+
+  // Ethnicity checkboxes
+  const ethContainer = document.getElementById('ethnicity-container');
+  ethContainer.innerHTML = '';
+  Object.entries(refData.ethnicity).forEach(([code, display]) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-secondary btn-sm';
+    btn.textContent = display;
+    btn.dataset.code = code;
+    btn.dataset.display = display;
+    btn.addEventListener('click', () => toggleEthnicity(code, display, btn));
+    ethContainer.appendChild(btn);
+  });
+}
+
+function toggleEthnicity(code, display, btn) {
+  const idx = formState.ethnicity_codes.indexOf(code);
+  if (idx === -1) {
+    formState.ethnicity_codes.push(code);
+    btn.style.background = 'var(--nz-light)';
+    btn.style.borderColor = 'var(--nz-teal)';
+    btn.style.color = 'var(--nz-teal)';
+  } else {
+    formState.ethnicity_codes.splice(idx, 1);
+    btn.style.background = '';
+    btn.style.borderColor = '';
+    btn.style.color = '';
+  }
+  renderEthnicitySelected();
+}
+
+function renderEthnicitySelected() {
+  const container = document.getElementById('ethnicity-selected');
+  container.innerHTML = '';
+  formState.ethnicity_codes.forEach(code => {
+    const display = refData.ethnicity[code] || code;
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.innerHTML = `${display} <code style="font-size:10px;opacity:.6">${code}</code> <span class="chip-remove" onclick="removeEthnicity('${code}')">✕</span>`;
+    container.appendChild(chip);
+  });
+}
+
+function removeEthnicity(code) {
+  const idx = formState.ethnicity_codes.indexOf(code);
+  if (idx !== -1) formState.ethnicity_codes.splice(idx, 1);
+  // Reset button appearance
+  document.querySelectorAll('#ethnicity-container button').forEach(btn => {
+    if (btn.dataset.code === code) {
+      btn.style.background = '';
+      btn.style.borderColor = '';
+      btn.style.color = '';
+    }
+  });
+  renderEthnicitySelected();
+}
+
+// ============================================================
+// BMI auto-calculate
+// ============================================================
+['v_weight','v_height'].forEach(id => {
+  document.getElementById(id).addEventListener('input', calcBMI);
+});
+function calcBMI() {
+  const w = parseFloat(document.getElementById('v_weight').value);
+  const h = parseFloat(document.getElementById('v_height').value);
+  if (w > 0 && h > 0) {
+    const bmi = (w / ((h/100) ** 2)).toFixed(1);
+    document.getElementById('v_bmi').value = bmi;
+  } else {
+    document.getElementById('v_bmi').value = '';
+  }
+}
+
+// ============================================================
+// Dynamic list helpers
+// ============================================================
+function addCondition() {
+  const code = document.getElementById('cond_code').value;
+  const display = refData.conditions[code];
+  const status = document.getElementById('cond_status').value;
+  const onset = document.getElementById('cond_onset').value;
+  if (!code || !display) { showAlert('form-alert','Please select a condition.','warn'); return; }
+  formState.conditions.push({ snomed_code: code, display, status, onset_date: onset || null });
+  renderList('conditions-list', formState.conditions, 'conditions', c => `${c.display} [${c.status}]`);
+}
+
+function addMedication() {
+  const code = document.getElementById('med_code').value;
+  if (!code) { showAlert('form-alert','Please select a medication.','warn'); return; }
+  const info = refData.medications[code];
+  const name = info ? info.name : code;
+  const dose = document.getElementById('med_dose').value || (info ? info.strength : '');
+  const freq = document.getElementById('med_freq').value;
+  const route = document.getElementById('med_route').value;
+  formState.medications.push({ snomed_code: code, name, dose, frequency: freq, route, status: 'active' });
+  renderList('medications-list', formState.medications, 'medications', m => `${m.name} ${m.dose} ${m.frequency}`.trim(), 'med');
+}
+
+function addAllergy() {
+  const raw = document.getElementById('allergy_code').value;
+  if (!raw) { showAlert('form-alert','Please select an allergen.','warn'); return; }
+  const [code, display] = raw.split('|');
+  const reaction = document.getElementById('allergy_reaction').value;
+  const severity = document.getElementById('allergy_severity').value;
+  formState.allergies.push({ allergen_code: code, allergen_display: display, reaction, severity });
+  renderList('allergies-list', formState.allergies, 'allergies', a => `${a.allergen_display}${a.severity ? ' ('+a.severity+')' : ''}`, 'allergy');
+}
+
+function addLab() {
+  const code = document.getElementById('lab_code').value;
+  const value = parseFloat(document.getElementById('lab_value').value);
+  if (!code || isNaN(value)) { showAlert('form-alert','Select a test and enter a value.','warn'); return; }
+  const info = refData.loinc[code] || {};
+  const unit = document.getElementById('lab_unit').value || info.unit || '';
+  const flag = document.getElementById('lab_flag').value;
+  const date = document.getElementById('lab_date').value;
+  formState.lab_results.push({ loinc_code: code, value, unit, abnormal_flag: flag || null, collected_date: date || null });
+  renderList('labs-list', formState.lab_results, 'lab_results', l => {
+    const meta = refData.loinc[l.loinc_code] || {};
+    return `${meta.display || l.loinc_code}: ${l.value} ${l.unit}${l.abnormal_flag ? ' ['+l.abnormal_flag+']' : ''}`;
+  }, 'lab');
+}
+
+function addImmunization() {
+  const raw = document.getElementById('imm_code').value;
+  if (!raw) { showAlert('form-alert','Please select a vaccine.','warn'); return; }
+  const [code, display] = raw.split('|');
+  const date = document.getElementById('imm_date').value;
+  const site = document.getElementById('imm_site').value;
+  formState.immunizations.push({ vaccine_code: code, vaccine_display: display, date_given: date || null, site: site || null });
+  renderList('immunizations-list', formState.immunizations, 'immunizations', i => `${i.vaccine_display}${i.date_given ? ' — '+i.date_given : ''}`);
+}
+
+function renderList(containerId, list, listKey, labelFn, chipClass='') {
+  const el = document.getElementById(containerId);
+  el.innerHTML = '';
+  list.forEach((item, idx) => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (chipClass ? ' '+chipClass : '');
+    chip.innerHTML = `${labelFn(item)} <span class="chip-remove" onclick="removeItem('${listKey}',${idx})">✕</span>`;
+    el.appendChild(chip);
+  });
+}
+
+function removeItem(key, idx) {
+  formState[key].splice(idx, 1);
+  const ids = { conditions:'conditions-list', medications:'medications-list', allergies:'allergies-list', lab_results:'labs-list', immunizations:'immunizations-list' };
+  const labels = {
+    conditions: c => `${c.display} [${c.status}]`,
+    medications: m => `${m.name} ${m.dose||''} ${m.frequency||''}`.trim(),
+    allergies: a => `${a.allergen_display}${a.severity ? ' ('+a.severity+')' : ''}`,
+    lab_results: l => { const m = refData.loinc[l.loinc_code]||{}; return `${m.display||l.loinc_code}: ${l.value} ${l.unit}`; },
+    immunizations: i => `${i.vaccine_display}`,
+  };
+  const classes = { conditions:'', medications:'med', allergies:'allergy', lab_results:'lab', immunizations:'' };
+  renderList(ids[key], formState[key], key, labels[key], classes[key]);
+}
+
+// ============================================================
+// Alert
+// ============================================================
+function showAlert(containerId, msg, type='info') {
+  const icons = { success:'✓', error:'✕', info:'ℹ', warn:'⚠' };
+  const el = document.getElementById(containerId);
+  el.innerHTML = `<div class="alert alert-${type}">${icons[type]||''} ${msg}</div>`;
+  setTimeout(() => { el.innerHTML = ''; }, 6000);
+}
+
+// ============================================================
+// Form submission
+// ============================================================
+async function submitRecord() {
+  const btn = document.getElementById('submit-btn');
+  const spinner = document.getElementById('submit-spinner');
+
+  // Gather vitals
+  const getNum = id => { const v = document.getElementById(id).value; return v ? parseFloat(v) : null; };
+  const vitals = {
+    systolic_bp: getNum('v_sbp'),
+    diastolic_bp: getNum('v_dbp'),
+    heart_rate: getNum('v_hr'),
+    respiratory_rate: getNum('v_rr'),
+    temperature: getNum('v_temp'),
+    spo2: getNum('v_spo2'),
+    weight_kg: getNum('v_weight'),
+    height_cm: getNum('v_height'),
+    bmi: getNum('v_bmi'),
+  };
+  const hasVitals = Object.values(vitals).some(v => v !== null);
+
+  // Social history
+  const smokingRaw = document.getElementById('smoking_code').value;
+  const [smoking_code, smoking_display] = smokingRaw ? smokingRaw.split('|') : [null, null];
+  const social = {
+    smoking_status_code: smoking_code || null,
+    smoking_status_display: smoking_display || null,
+    pack_years: getNum('pack_years'),
+    alcohol_status_code: document.getElementById('alcohol_code').value || null,
+    alcohol_units_per_week: getNum('alcohol_units'),
+    occupation: document.getElementById('occupation').value || null,
+    lives_alone: document.getElementById('lives_alone').value === '' ? null : document.getElementById('lives_alone').value === 'true',
+  };
+  const hasSocial = Object.values(social).some(v => v !== null);
+
+  // Notes
+  const clinical_notes = [];
+  const exam = document.getElementById('note_exam').value.trim();
+  const plan = document.getElementById('note_plan').value.trim();
+  const other = document.getElementById('note_other').value.trim();
+  if (exam) clinical_notes.push({ section:'examination', text: exam });
+  if (plan) clinical_notes.push({ section:'assessment and plan', text: plan });
+  if (other) clinical_notes.push({ section:'other', text: other });
+
+  // NHI force upper
+  const nhi = document.getElementById('nhi_number').value.trim().toUpperCase() || null;
+
+  const payload = {
+    nhi_number: nhi,
+    family_name: document.getElementById('family_name').value.trim(),
+    given_names: document.getElementById('given_names').value.trim(),
+    date_of_birth: document.getElementById('date_of_birth').value,
+    sex: document.getElementById('sex').value,
+    gender_identity: document.getElementById('gender_identity').value || null,
+    sex_at_birth: document.getElementById('sex_at_birth').value || null,
+    ethnicity_codes: formState.ethnicity_codes,
+    address: {
+      street: document.getElementById('addr_street').value || null,
+      suburb: document.getElementById('addr_suburb').value || null,
+      city: document.getElementById('addr_city').value || null,
+      postcode: document.getElementById('addr_postcode').value || null,
+      region: document.getElementById('addr_region').value || null,
+    },
+    phone: document.getElementById('phone').value || null,
+    email: document.getElementById('email').value || null,
+    gp_name: document.getElementById('gp_name').value || null,
+    gp_practice: document.getElementById('gp_practice').value || null,
+    pho: document.getElementById('pho').value || null,
+    encounter_date: document.getElementById('encounter_date').value,
+    encounter_type: document.getElementById('encounter_type').value,
+    presenting_complaint: document.getElementById('presenting_complaint').value || null,
+    clinician_name: document.getElementById('clinician_name').value || null,
+    clinician_role: document.getElementById('clinician_role').value || null,
+    vitals: hasVitals ? vitals : null,
+    conditions: formState.conditions,
+    medications: formState.medications,
+    allergies: formState.allergies,
+    lab_results: formState.lab_results,
+    immunizations: formState.immunizations,
+    social_history: hasSocial ? social : null,
+    clinical_notes,
+  };
+
+  // Validate
+  if (!payload.family_name || !payload.given_names || !payload.date_of_birth || !payload.sex || !payload.encounter_date) {
+    showAlert('form-alert','Please complete all required fields.','error');
+    return;
+  }
+
+  btn.disabled = true;
+  spinner.style.display = '';
+  try {
+    const result = await apiPost('/api/records', payload);
+    showAlert('form-alert', `Record saved — ID: ${result.record_id}`, 'success');
+    resetForm();
+    loadStats();
+  } catch(e) {
+    showAlert('form-alert', `Error: ${e.message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    spinner.style.display = 'none';
+  }
+}
+
+function resetForm() {
+  document.getElementById('encounter-form').reset();
+  formState = { ethnicity_codes:[], conditions:[], medications:[], allergies:[], lab_results:[], immunizations:[] };
+  ['conditions-list','medications-list','allergies-list','labs-list','immunizations-list','ethnicity-selected'].forEach(id => {
+    document.getElementById(id).innerHTML = '';
+  });
+  document.querySelectorAll('#ethnicity-container button').forEach(btn => {
+    btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = '';
+  });
+  // Set today's date
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('encounter_date').value = today;
+}
+
+// ============================================================
+// Records list
+// ============================================================
+async function loadRecords() {
+  const fam = document.getElementById('search-family').value.trim();
+  const nhi = document.getElementById('search-nhi').value.trim().toUpperCase();
+  const date = document.getElementById('search-date').value;
+
+  let url = '/api/records?limit=100';
+  if (fam) url += `&family_name=${encodeURIComponent(fam)}`;
+  if (nhi) url += `&nhi=${encodeURIComponent(nhi)}`;
+  if (date) url += `&encounter_date=${date}`;
+
+  const tbody = document.getElementById('records-tbody');
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;"><span class="spinner"></span></td></tr>';
+
+  try {
+    const records = await apiGet(url);
+    if (!records.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">No records found</td></tr>';
+      return;
+    }
+    tbody.innerHTML = '';
+    records.forEach(r => {
+      const tr = document.createElement('tr');
+      const encBadge = {ambulatory:'amb',inpatient:'inp',emergency:'emer',telehealth:'tele'}[r.encounter_type] || 'amb';
+      tr.innerHTML = `
+        <td>${r.nhi_number ? `<span class="nhi-pill">${r.nhi_number}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+        <td><strong>${r.family_name}</strong>, ${r.given_names}<br><span style="font-size:11px;color:var(--muted)">${r.sex}</span></td>
+        <td>${r.date_of_birth || '—'}</td>
+        <td>${r.encounter_date}</td>
+        <td><span class="badge badge-${encBadge}">${r.encounter_type}</span></td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.presenting_complaint||''}">${r.presenting_complaint ? r.presenting_complaint.substring(0,60)+'...' : '<span style="color:var(--muted)">—</span>'}</td>
+        <td>${r.fhir_bundle_id ? `<span style="color:var(--success);font-size:11px;">✓ FHIR</span>` : '<span style="color:var(--muted);font-size:11px;">Not converted</span>'}</td>
+        <td>
+          <button class="btn btn-secondary btn-sm" onclick="viewRecord('${r.record_id}')">View</button>
+          <button class="btn btn-fhir btn-sm" onclick="convertRecord('${r.record_id}', this)">⚡ FHIR</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteRecord('${r.record_id}')">Del</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--danger);padding:16px;">Error: ${e.message}</td></tr>`;
+  }
+}
+
+async function convertRecord(recordId, btn) {
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const result = await apiPost(`/api/records/${recordId}/convert`, {});
+    showDetailPanel(`FHIR Bundle — ${result.bundle_id}`, formatFhirPanel(result.bundle));
+    await loadRecords();
+    await loadStats();
+  } catch(e) {
+    alert('FHIR conversion error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ FHIR';
+  }
+}
+
+async function deleteRecord(recordId) {
+  if (!confirm('Delete this clinical record?')) return;
+  await apiDelete('/api/records/' + recordId);
+  await loadRecords();
+  loadStats();
+}
+
+async function viewRecord(recordId) {
+  const r = await apiGet('/api/records/' + recordId);
+  const html = `
+    <div style="display:grid;gap:12px;">
+      <div class="card">
+        <div class="card-header"><h2>Demographics</h2></div>
+        <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;">
+          <div><strong>Name:</strong> ${r.family_name}, ${r.given_names}</div>
+          <div><strong>DOB:</strong> ${r.date_of_birth}</div>
+          <div><strong>NHI:</strong> ${r.nhi_number ? `<span class="nhi-pill">${r.nhi_number}</span>` : '—'}</div>
+          <div><strong>Sex:</strong> ${r.sex}</div>
+          <div><strong>Ethnicity:</strong> ${(r.ethnicity_codes||[]).map(c => refData.ethnicity[c]||c).join(', ')||'—'}</div>
+          <div><strong>Phone:</strong> ${r.phone||'—'}</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Encounter</h2></div>
+        <div class="card-body" style="font-size:13px;">
+          <div><strong>Date:</strong> ${r.encounter_date} | <strong>Type:</strong> ${r.encounter_type}</div>
+          <div><strong>Clinician:</strong> ${r.clinician_name||'—'} (${r.clinician_role||''})</div>
+          <div style="margin-top:8px;"><strong>Presenting Complaint:</strong><br>${r.presenting_complaint||'—'}</div>
+        </div>
+      </div>
+      ${r.vitals ? `<div class="card">
+        <div class="card-header"><h2>Vital Signs</h2></div>
+        <div class="card-body" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:13px;">
+          ${r.vitals.systolic_bp ? `<div>BP: ${r.vitals.systolic_bp}/${r.vitals.diastolic_bp} mmHg</div>` : ''}
+          ${r.vitals.heart_rate ? `<div>HR: ${r.vitals.heart_rate} bpm</div>` : ''}
+          ${r.vitals.temperature ? `<div>Temp: ${r.vitals.temperature}°C</div>` : ''}
+          ${r.vitals.spo2 ? `<div>SpO2: ${r.vitals.spo2}%</div>` : ''}
+          ${r.vitals.weight_kg ? `<div>Weight: ${r.vitals.weight_kg} kg</div>` : ''}
+          ${r.vitals.bmi ? `<div>BMI: ${r.vitals.bmi}</div>` : ''}
+        </div>
+      </div>` : ''}
+      ${(r.conditions||[]).length ? `<div class="card">
+        <div class="card-header"><h2>Conditions</h2></div>
+        <div class="card-body"><div class="chip-list">${r.conditions.map(c=>`<div class="chip">${c.display} <code style="font-size:10px">${c.snomed_code}</code></div>`).join('')}</div></div>
+      </div>` : ''}
+      ${(r.medications||[]).length ? `<div class="card">
+        <div class="card-header"><h2>Medications</h2></div>
+        <div class="card-body"><div class="chip-list">${r.medications.map(m=>`<div class="chip med">${m.name} ${m.dose||''} ${m.frequency||''}</div>`).join('')}</div></div>
+      </div>` : ''}
+      ${(r.allergies||[]).length ? `<div class="card">
+        <div class="card-header"><h2>Allergies</h2></div>
+        <div class="card-body"><div class="chip-list">${r.allergies.map(a=>`<div class="chip allergy">${a.allergen_display}${a.severity?' ('+a.severity+')':''}</div>`).join('')}</div></div>
+      </div>` : ''}
+      ${(r.lab_results||[]).length ? `<div class="card">
+        <div class="card-header"><h2>Lab Results</h2></div>
+        <div class="card-body"><div class="chip-list">${r.lab_results.map(l=>{const m=refData.loinc[l.loinc_code]||{};return`<div class="chip lab">${m.display||l.loinc_code}: ${l.value} ${l.unit}${l.abnormal_flag?' ['+l.abnormal_flag+']':''}</div>`;}).join('')}</div></div>
+      </div>` : ''}
+      ${r.fhir_bundle_id ? `<div style="margin-top:8px;">
+        <button class="btn btn-fhir" onclick="loadAndShowFhir('${r.fhir_bundle_id}')">View FHIR Bundle</button>
+      </div>` : `<div style="margin-top:8px;">
+        <button class="btn btn-fhir" onclick="convertRecord('${r.record_id}', this);closeDetailPanel()">⚡ Convert to FHIR</button>
+      </div>`}
+    </div>
+  `;
+  showDetailPanel(`${r.family_name}, ${r.given_names}`, html);
+}
+
+// ============================================================
+// FHIR Store
+// ============================================================
+async function loadFhirIndex() {
+  const type = document.getElementById('fhir-type-filter').value;
+  const name = document.getElementById('fhir-name-filter').value.trim();
+  const nhi = document.getElementById('fhir-nhi-filter').value.trim().toUpperCase();
+  const from = document.getElementById('fhir-from-filter').value;
+  const to = document.getElementById('fhir-to-filter').value;
+
+  let url = '/api/fhir/all?limit=200';
+  const params = [];
+  if (type) params.push(`resource_type=${encodeURIComponent(type)}`);
+  if (name) params.push(`subject_name=${encodeURIComponent(name)}`);
+  if (nhi) params.push(`nhi_number=${encodeURIComponent(nhi)}`);
+  if (from) params.push(`date_from=${from}`);
+  if (to) params.push(`date_to=${to}`);
+
+  if (params.length) url = `/api/fhir?${params.join('&')}&limit=200`;
+
+  const tbody = document.getElementById('fhir-tbody');
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;"><span class="spinner"></span></td></tr>';
+
+  const countBar = document.getElementById('fhir-count-bar');
+  try {
+    const items = await apiGet(url);
+    countBar.textContent = `Showing ${items.length} FHIR resource${items.length !== 1 ? 's' : ''}`;
+    if (!items.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">No FHIR resources found. Convert a clinical record first.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = '';
+    items.forEach(item => {
+      const tr = document.createElement('tr');
+      const typeColors = {
+        Bundle:'#E8610A', Patient:'#007A4D', Encounter:'#1B4F8A',
+        Observation:'#5B21B6', Condition:'#92400E', MedicationStatement:'#065F46',
+        AllergyIntolerance:'#991B1B', Immunization:'#1E40AF', Composition:'#374151',
+      };
+      const color = typeColors[item.resource_type] || '#374151';
+      tr.innerHTML = `
+        <td><span style="background:${color};color:white;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;">${item.resource_type}</span></td>
+        <td><code style="font-size:11px;">${item.id.substring(0,8)}…</code></td>
+        <td>${item.subject_name || '—'}</td>
+        <td>${item.nhi_number ? `<span class="nhi-pill">${item.nhi_number}</span>` : '—'}</td>
+        <td>${item.date || '—'}</td>
+        <td style="max-width:200px;font-size:12px;color:var(--muted);">${item.summary || ''}</td>
+        <td>
+          <button class="btn btn-fhir btn-sm" onclick="loadAndShowFhir('${item.id}')">View JSON</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch(e) {
+    countBar.textContent = '';
+    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--danger);padding:16px;">Error: ${e.message}</td></tr>`;
+  }
+}
+
+async function loadAndShowFhir(resourceId) {
+  const viewer = document.getElementById('fhir-viewer');
+  const pre = document.getElementById('fhir-json-pre');
+  const title = document.getElementById('fhir-viewer-title');
+  pre.innerHTML = '<span class="spinner"></span>';
+  viewer.style.display = 'block';
+  title.textContent = resourceId;
+  viewer.scrollIntoView({ behavior:'smooth' });
+
+  try {
+    const r = await apiGet('/api/fhir/' + resourceId);
+    pre.innerHTML = syntaxHighlight(JSON.stringify(r, null, 2));
+  } catch(e) {
+    pre.textContent = 'Error: ' + e.message;
+  }
+}
+
+function formatFhirPanel(bundle) {
+  return `<div class="fhir-panel" style="border-radius:8px;overflow:hidden;">
+    <div class="fhir-panel-header"><span class="type-badge">Bundle</span> ${bundle.id}</div>
+    <pre class="fhir-json">${syntaxHighlight(JSON.stringify(bundle, null, 2))}</pre>
+  </div>`;
+}
+
+function copyFhirJson() {
+  const text = document.getElementById('fhir-json-pre').textContent;
+  navigator.clipboard.writeText(text).then(() => alert('Copied to clipboard'));
+}
+
+// JSON syntax highlighter
+function syntaxHighlight(json) {
+  return json.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, match => {
+      let cls = 'ji';
+      if (/^"/.test(match)) {
+        cls = /:$/.test(match) ? 'jk' : 'jv';
+      } else if (/true|false/.test(match)) {
+        cls = 'jb';
+      } else if (/null/.test(match)) {
+        cls = 'jn';
+      }
+      return `<span class="${cls}">${match}</span>`;
+    });
+}
+
+// ============================================================
+// Detail panel
+// ============================================================
+function showDetailPanel(title, html) {
+  document.getElementById('dp-title').textContent = title;
+  document.getElementById('dp-body').innerHTML = html;
+  document.getElementById('detail-panel').classList.add('open');
+  document.getElementById('overlay').classList.add('visible');
+}
+function closeDetailPanel() {
+  document.getElementById('detail-panel').classList.remove('open');
+  document.getElementById('overlay').classList.remove('visible');
+}
+
+// ============================================================
+// Stats
+// ============================================================
+async function loadStats() {
+  try {
+    const s = await apiGet('/api/stats');
+    document.getElementById('stat-records').textContent = s.clinical_records;
+    document.getElementById('stat-fhir').textContent = s.fhir_resources;
+    document.getElementById('header-stats').textContent = `${s.clinical_records} records · ${s.fhir_resources} FHIR resources`;
+  } catch(e) {
+    document.getElementById('header-stats').textContent = 'Backend offline';
+  }
+}
+
+// ============================================================
+// Init
+// ============================================================
+window.addEventListener('DOMContentLoaded', () => {
+  // Default dates
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('encounter_date').value = today;
+  document.getElementById('lab_date').value = today;
+  document.getElementById('imm_date').value = today;
+
+  loadRefData();
+  loadStats();
+});
+</script>
+</body>
+</html>

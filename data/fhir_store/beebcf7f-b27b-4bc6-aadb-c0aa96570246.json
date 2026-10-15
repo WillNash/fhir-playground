@@ -1,0 +1,666 @@
+{
+  "resourceType": "Bundle",
+  "id": "beebcf7f-b27b-4bc6-aadb-c0aa96570246",
+  "meta": {
+    "lastUpdated": "2026-10-16T10:57:04+13:00",
+    "profile": [
+      "http://hl7.org/fhir/StructureDefinition/Bundle"
+    ]
+  },
+  "identifier": {
+    "system": "urn:ietf:rfc:3986",
+    "value": "urn:uuid:beebcf7f-b27b-4bc6-aadb-c0aa96570246"
+  },
+  "type": "transaction",
+  "timestamp": "2026-10-16T10:57:04+13:00",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:e59243ba-faf6-45ab-a2c3-cf215f6f6591",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "e59243ba-faf6-45ab-a2c3-cf215f6f6591",
+        "meta": {
+          "profile": [
+            "https://fhir.org.nz/ig/base/StructureDefinition/NzPatient"
+          ],
+          "lastUpdated": "2026-10-16T10:57:04+13:00"
+        },
+        "identifier": [
+          {
+            "use": "official",
+            "system": "https://standards.digital.health.nz/ns/nhi-id",
+            "value": "ZZZ0016"
+          }
+        ],
+        "name": [
+          {
+            "use": "official",
+            "family": "Tane",
+            "given": [
+              "Hemi"
+            ]
+          }
+        ],
+        "birthDate": "1985-03-22",
+        "gender": "male",
+        "extension": [
+          {
+            "url": "http://hl7.org.nz/fhir/StructureDefinition/nz-ethnicity",
+            "valueCodeableConcept": {
+              "coding": [
+                {
+                  "system": "https://standards.digital.health.nz/ns/ethnic-group-level-4-code",
+                  "code": "21111",
+                  "display": "Māori"
+                }
+              ],
+              "text": "Māori"
+            }
+          },
+          {
+            "url": "http://hl7.org.nz/fhir/StructureDefinition/nz-ethnicity",
+            "valueCodeableConcept": {
+              "coding": [
+                {
+                  "system": "https://standards.digital.health.nz/ns/ethnic-group-level-4-code",
+                  "code": "11111",
+                  "display": "New Zealand European"
+                }
+              ],
+              "text": "New Zealand European"
+            }
+          },
+          {
+            "url": "http://hl7.org.nz/fhir/StructureDefinition/sex-at-birth",
+            "valueCodeableConcept": {
+              "coding": [
+                {
+                  "system": "http://hl7.org/fhir/administrative-gender",
+                  "code": "male",
+                  "display": "Male"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:636cfd6e-fdbc-4aba-ad36-99454a4e1a62",
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "636cfd6e-fdbc-4aba-ad36-99454a4e1a62",
+        "meta": {
+          "profile": [
+            "https://fhir.org.nz/ig/base/StructureDefinition/NzEncounter"
+          ],
+          "lastUpdated": "2026-10-16T10:57:04+13:00"
+        },
+        "status": "finished",
+        "class": {
+          "system": "http://terminology.hl7.org/CodeSystem/v3-ActCode",
+          "code": "AMB",
+          "display": "ambulatory"
+        },
+        "subject": {
+          "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+        },
+        "period": {
+          "start": "2026-10-15",
+          "end": "2026-10-15"
+        },
+        "reasonCode": [
+          {
+            "text": "Routine diabetes review"
+          }
+        ],
+        "participant": [
+          {
+            "type": [
+              {
+                "text": null
+              }
+            ],
+            "individual": {
+              "display": "Dr Jane Wilson"
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Encounter/636cfd6e-fdbc-4aba-ad36-99454a4e1a62"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:175e65e5-ffe4-468e-9025-e00b2fea6c5e",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "175e65e5-ffe4-468e-9025-e00b2fea6c5e",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/StructureDefinition/bp"
+          ]
+        },
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "85354-9",
+              "display": "Blood pressure panel with all children optional"
+            }
+          ],
+          "text": "Blood pressure"
+        },
+        "subject": {
+          "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+        },
+        "encounter": {
+          "reference": "Encounter/636cfd6e-fdbc-4aba-ad36-99454a4e1a62"
+        },
+        "effectiveDateTime": "2026-10-15",
+        "component": [
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8480-6",
+                  "display": "Systolic blood pressure"
+                }
+              ]
+            },
+            "valueQuantity": {
+              "value": 132.0,
+              "unit": "mmHg",
+              "system": "http://unitsofmeasure.org",
+              "code": "mm[Hg]"
+            }
+          },
+          {
+            "code": {
+              "coding": [
+                {
+                  "system": "http://loinc.org",
+                  "code": "8462-4",
+                  "display": "Diastolic blood pressure"
+                }
+              ]
+            },
+            "valueQuantity": {
+              "value": 82.0,
+              "unit": "mmHg",
+              "system": "http://unitsofmeasure.org",
+              "code": "mm[Hg]"
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/175e65e5-ffe4-468e-9025-e00b2fea6c5e"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:394f2ba6-04b4-4d56-bd6a-a5e55b5386ff",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "394f2ba6-04b4-4d56-bd6a-a5e55b5386ff",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "2708-6",
+              "display": "Oxygen saturation in Arterial blood"
+            },
+            {
+              "system": "http://loinc.org",
+              "code": "59408-5",
+              "display": "Oxygen saturation by Pulse oximetry"
+            }
+          ],
+          "text": "Oxygen saturation"
+        },
+        "subject": {
+          "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+        },
+        "encounter": {
+          "reference": "Encounter/636cfd6e-fdbc-4aba-ad36-99454a4e1a62"
+        },
+        "effectiveDateTime": "2026-10-15",
+        "valueQuantity": {
+          "value": 97.5,
+          "unit": "%",
+          "system": "http://unitsofmeasure.org",
+          "code": "%"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/394f2ba6-04b4-4d56-bd6a-a5e55b5386ff"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:0bf6d511-1cf6-4566-910d-8d8011c29b9c",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "0bf6d511-1cf6-4566-910d-8d8011c29b9c",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8867-4",
+              "display": "Heart rate"
+            }
+          ],
+          "text": "Heart rate"
+        },
+        "subject": {
+          "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+        },
+        "encounter": {
+          "reference": "Encounter/636cfd6e-fdbc-4aba-ad36-99454a4e1a62"
+        },
+        "effectiveDateTime": "2026-10-15",
+        "valueQuantity": {
+          "value": 72.0,
+          "unit": "beats/min",
+          "system": "http://unitsofmeasure.org",
+          "code": "/min"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/0bf6d511-1cf6-4566-910d-8d8011c29b9c"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:cb1b51ad-87f8-46f7-87c1-9b498ecca8a5",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "cb1b51ad-87f8-46f7-87c1-9b498ecca8a5",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "29463-7",
+              "display": "Body weight"
+            }
+          ],
+          "text": "Body weight"
+        },
+        "subject": {
+          "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+        },
+        "encounter": {
+          "reference": "Encounter/636cfd6e-fdbc-4aba-ad36-99454a4e1a62"
+        },
+        "effectiveDateTime": "2026-10-15",
+        "valueQuantity": {
+          "value": 85.0,
+          "unit": "kg",
+          "system": "http://unitsofmeasure.org",
+          "code": "kg"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/cb1b51ad-87f8-46f7-87c1-9b498ecca8a5"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:de255ac8-953e-4dfc-9cc8-854323d09291",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "de255ac8-953e-4dfc-9cc8-854323d09291",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {
+                "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+                "code": "vital-signs",
+                "display": "Vital Signs"
+              }
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "8302-2",
+              "display": "Body height"
+            }
+          ],
+          "text": "Body height"
+        },
+        "subject": {
+          "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+        },
+        "encounter": {
+          "reference": "Encounter/636cfd6e-fdbc-4aba-ad36-99454a4e1a62"
+        },
+        "effectiveDateTime": "2026-10-15",
+        "valueQuantity": {
+          "value": 178.0,
+          "unit": "cm",
+          "system": "http://unitsofmeasure.org",
+          "code": "cm"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Observation/de255ac8-953e-4dfc-9cc8-854323d09291"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:cfca6d93-9aa3-4a0e-99cc-1eaac63ced9a",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "cfca6d93-9aa3-4a0e-99cc-1eaac63ced9a",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+              "code": "active",
+              "display": "Active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+              "code": "confirmed",
+              "display": "Confirmed"
+            }
+          ]
+        },
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "44054006",
+              "display": "Diabetes mellitus type 2"
+            }
+          ],
+          "text": "Diabetes mellitus type 2"
+        },
+        "subject": {
+          "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+        },
+        "encounter": {
+          "reference": "Encounter/636cfd6e-fdbc-4aba-ad36-99454a4e1a62"
+        }
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Condition/cfca6d93-9aa3-4a0e-99cc-1eaac63ced9a"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:f4bfd9db-c856-46b7-afa5-d76f56d95a92",
+      "resource": {
+        "resourceType": "MedicationStatement",
+        "id": "f4bfd9db-c856-46b7-afa5-d76f56d95a92",
+        "status": "active",
+        "medicationCodeableConcept": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "386873009",
+              "display": "Metformin"
+            }
+          ],
+          "text": "Metformin"
+        },
+        "subject": {
+          "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+        },
+        "context": {
+          "reference": "Encounter/636cfd6e-fdbc-4aba-ad36-99454a4e1a62"
+        },
+        "dosage": [
+          {
+            "text": "500mg",
+            "timing": {
+              "repeat": {
+                "boundsPeriod": {}
+              },
+              "code": {
+                "text": "twice daily"
+              }
+            }
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "MedicationStatement/f4bfd9db-c856-46b7-afa5-d76f56d95a92"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:7a0309b5-5710-4787-ba54-e8484e1f59d7",
+      "resource": {
+        "resourceType": "AllergyIntolerance",
+        "id": "7a0309b5-5710-4787-ba54-e8484e1f59d7",
+        "clinicalStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical",
+              "code": "active",
+              "display": "Active"
+            }
+          ]
+        },
+        "verificationStatus": {
+          "coding": [
+            {
+              "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-verification",
+              "code": "confirmed",
+              "display": "Confirmed"
+            }
+          ]
+        },
+        "type": "allergy",
+        "category": [
+          "medication"
+        ],
+        "code": {
+          "coding": [
+            {
+              "system": "http://snomed.info/sct",
+              "code": "372687004",
+              "display": "Penicillin"
+            }
+          ],
+          "text": "Penicillin"
+        },
+        "patient": {
+          "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+        },
+        "reaction": [
+          {
+            "manifestation": [
+              {
+                "text": "Rash"
+              }
+            ],
+            "severity": "moderate"
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "AllergyIntolerance/7a0309b5-5710-4787-ba54-e8484e1f59d7"
+      }
+    },
+    {
+      "fullUrl": "urn:uuid:b34918c9-d1bb-4fae-8c7b-2ade0da590d2",
+      "resource": {
+        "resourceType": "Composition",
+        "id": "b34918c9-d1bb-4fae-8c7b-2ade0da590d2",
+        "status": "final",
+        "type": {
+          "coding": [
+            {
+              "system": "http://loinc.org",
+              "code": "11506-3",
+              "display": "Progress note"
+            }
+          ],
+          "text": "Clinical encounter note"
+        },
+        "subject": {
+          "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+        },
+        "encounter": {
+          "reference": "Encounter/636cfd6e-fdbc-4aba-ad36-99454a4e1a62"
+        },
+        "date": "2026-10-16T10:57:04+13:00",
+        "author": [
+          {
+            "display": "Dr Jane Wilson"
+          }
+        ],
+        "title": "Encounter note - 2026-10-15",
+        "section": [
+          {
+            "title": "Vital Signs",
+            "code": {
+              "text": "Vital Signs"
+            },
+            "entry": [
+              {
+                "reference": "Observation/175e65e5-ffe4-468e-9025-e00b2fea6c5e"
+              },
+              {
+                "reference": "Observation/394f2ba6-04b4-4d56-bd6a-a5e55b5386ff"
+              },
+              {
+                "reference": "Observation/0bf6d511-1cf6-4566-910d-8d8011c29b9c"
+              },
+              {
+                "reference": "Observation/cb1b51ad-87f8-46f7-87c1-9b498ecca8a5"
+              },
+              {
+                "reference": "Observation/de255ac8-953e-4dfc-9cc8-854323d09291"
+              }
+            ]
+          },
+          {
+            "title": "Laboratory Results",
+            "code": {
+              "text": "Laboratory Results"
+            },
+            "entry": []
+          },
+          {
+            "title": "Conditions",
+            "code": {
+              "text": "Conditions"
+            },
+            "entry": [
+              {
+                "reference": "Condition/cfca6d93-9aa3-4a0e-99cc-1eaac63ced9a"
+              }
+            ]
+          },
+          {
+            "title": "Medications",
+            "code": {
+              "text": "Medications"
+            },
+            "entry": [
+              {
+                "reference": "MedicationStatement/f4bfd9db-c856-46b7-afa5-d76f56d95a92"
+              }
+            ]
+          },
+          {
+            "title": "Allergies",
+            "code": {
+              "text": "Allergies"
+            },
+            "entry": [
+              {
+                "reference": "AllergyIntolerance/7a0309b5-5710-4787-ba54-e8484e1f59d7"
+              }
+            ]
+          },
+          {
+            "title": "Immunizations",
+            "code": {
+              "text": "Immunizations"
+            },
+            "entry": []
+          },
+          {
+            "title": "Social History",
+            "code": {
+              "text": "Social History"
+            },
+            "entry": []
+          }
+        ]
+      },
+      "request": {
+        "method": "PUT",
+        "url": "Composition/b34918c9-d1bb-4fae-8c7b-2ade0da590d2"
+      }
+    }
+  ]
+}

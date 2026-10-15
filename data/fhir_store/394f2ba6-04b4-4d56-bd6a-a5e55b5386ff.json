@@ -1,0 +1,44 @@
+{
+  "resourceType": "Observation",
+  "id": "394f2ba6-04b4-4d56-bd6a-a5e55b5386ff",
+  "status": "final",
+  "category": [
+    {
+      "coding": [
+        {
+          "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+          "code": "vital-signs",
+          "display": "Vital Signs"
+        }
+      ]
+    }
+  ],
+  "code": {
+    "coding": [
+      {
+        "system": "http://loinc.org",
+        "code": "2708-6",
+        "display": "Oxygen saturation in Arterial blood"
+      },
+      {
+        "system": "http://loinc.org",
+        "code": "59408-5",
+        "display": "Oxygen saturation by Pulse oximetry"
+      }
+    ],
+    "text": "Oxygen saturation"
+  },
+  "subject": {
+    "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+  },
+  "encounter": {
+    "reference": "Encounter/636cfd6e-fdbc-4aba-ad36-99454a4e1a62"
+  },
+  "effectiveDateTime": "2026-10-15",
+  "valueQuantity": {
+    "value": 97.5,
+    "unit": "%",
+    "system": "http://unitsofmeasure.org",
+    "code": "%"
+  }
+}

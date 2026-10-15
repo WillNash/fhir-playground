@@ -1,0 +1,34 @@
+{
+  "resourceType": "MedicationStatement",
+  "id": "f4bfd9db-c856-46b7-afa5-d76f56d95a92",
+  "status": "active",
+  "medicationCodeableConcept": {
+    "coding": [
+      {
+        "system": "http://snomed.info/sct",
+        "code": "386873009",
+        "display": "Metformin"
+      }
+    ],
+    "text": "Metformin"
+  },
+  "subject": {
+    "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+  },
+  "context": {
+    "reference": "Encounter/636cfd6e-fdbc-4aba-ad36-99454a4e1a62"
+  },
+  "dosage": [
+    {
+      "text": "500mg",
+      "timing": {
+        "repeat": {
+          "boundsPeriod": {}
+        },
+        "code": {
+          "text": "twice daily"
+        }
+      }
+    }
+  ]
+}

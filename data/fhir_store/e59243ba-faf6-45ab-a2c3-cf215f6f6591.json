@@ -1,0 +1,68 @@
+{
+  "resourceType": "Patient",
+  "id": "e59243ba-faf6-45ab-a2c3-cf215f6f6591",
+  "meta": {
+    "profile": [
+      "https://fhir.org.nz/ig/base/StructureDefinition/NzPatient"
+    ],
+    "lastUpdated": "2026-10-16T10:57:04+13:00"
+  },
+  "identifier": [
+    {
+      "use": "official",
+      "system": "https://standards.digital.health.nz/ns/nhi-id",
+      "value": "ZZZ0016"
+    }
+  ],
+  "name": [
+    {
+      "use": "official",
+      "family": "Tane",
+      "given": [
+        "Hemi"
+      ]
+    }
+  ],
+  "birthDate": "1985-03-22",
+  "gender": "male",
+  "extension": [
+    {
+      "url": "http://hl7.org.nz/fhir/StructureDefinition/nz-ethnicity",
+      "valueCodeableConcept": {
+        "coding": [
+          {
+            "system": "https://standards.digital.health.nz/ns/ethnic-group-level-4-code",
+            "code": "21111",
+            "display": "Māori"
+          }
+        ],
+        "text": "Māori"
+      }
+    },
+    {
+      "url": "http://hl7.org.nz/fhir/StructureDefinition/nz-ethnicity",
+      "valueCodeableConcept": {
+        "coding": [
+          {
+            "system": "https://standards.digital.health.nz/ns/ethnic-group-level-4-code",
+            "code": "11111",
+            "display": "New Zealand European"
+          }
+        ],
+        "text": "New Zealand European"
+      }
+    },
+    {
+      "url": "http://hl7.org.nz/fhir/StructureDefinition/sex-at-birth",
+      "valueCodeableConcept": {
+        "coding": [
+          {
+            "system": "http://hl7.org/fhir/administrative-gender",
+            "code": "male",
+            "display": "Male"
+          }
+        ]
+      }
+    }
+  ]
+}

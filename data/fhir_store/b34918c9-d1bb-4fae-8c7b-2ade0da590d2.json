@@ -1,0 +1,107 @@
+{
+  "resourceType": "Composition",
+  "id": "b34918c9-d1bb-4fae-8c7b-2ade0da590d2",
+  "status": "final",
+  "type": {
+    "coding": [
+      {
+        "system": "http://loinc.org",
+        "code": "11506-3",
+        "display": "Progress note"
+      }
+    ],
+    "text": "Clinical encounter note"
+  },
+  "subject": {
+    "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+  },
+  "encounter": {
+    "reference": "Encounter/636cfd6e-fdbc-4aba-ad36-99454a4e1a62"
+  },
+  "date": "2026-10-16T10:57:04+13:00",
+  "author": [
+    {
+      "display": "Dr Jane Wilson"
+    }
+  ],
+  "title": "Encounter note - 2026-10-15",
+  "section": [
+    {
+      "title": "Vital Signs",
+      "code": {
+        "text": "Vital Signs"
+      },
+      "entry": [
+        {
+          "reference": "Observation/175e65e5-ffe4-468e-9025-e00b2fea6c5e"
+        },
+        {
+          "reference": "Observation/394f2ba6-04b4-4d56-bd6a-a5e55b5386ff"
+        },
+        {
+          "reference": "Observation/0bf6d511-1cf6-4566-910d-8d8011c29b9c"
+        },
+        {
+          "reference": "Observation/cb1b51ad-87f8-46f7-87c1-9b498ecca8a5"
+        },
+        {
+          "reference": "Observation/de255ac8-953e-4dfc-9cc8-854323d09291"
+        }
+      ]
+    },
+    {
+      "title": "Laboratory Results",
+      "code": {
+        "text": "Laboratory Results"
+      },
+      "entry": []
+    },
+    {
+      "title": "Conditions",
+      "code": {
+        "text": "Conditions"
+      },
+      "entry": [
+        {
+          "reference": "Condition/cfca6d93-9aa3-4a0e-99cc-1eaac63ced9a"
+        }
+      ]
+    },
+    {
+      "title": "Medications",
+      "code": {
+        "text": "Medications"
+      },
+      "entry": [
+        {
+          "reference": "MedicationStatement/f4bfd9db-c856-46b7-afa5-d76f56d95a92"
+        }
+      ]
+    },
+    {
+      "title": "Allergies",
+      "code": {
+        "text": "Allergies"
+      },
+      "entry": [
+        {
+          "reference": "AllergyIntolerance/7a0309b5-5710-4787-ba54-e8484e1f59d7"
+        }
+      ]
+    },
+    {
+      "title": "Immunizations",
+      "code": {
+        "text": "Immunizations"
+      },
+      "entry": []
+    },
+    {
+      "title": "Social History",
+      "code": {
+        "text": "Social History"
+      },
+      "entry": []
+    }
+  ]
+}

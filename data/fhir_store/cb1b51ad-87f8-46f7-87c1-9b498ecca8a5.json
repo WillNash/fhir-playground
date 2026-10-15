@@ -1,0 +1,39 @@
+{
+  "resourceType": "Observation",
+  "id": "cb1b51ad-87f8-46f7-87c1-9b498ecca8a5",
+  "status": "final",
+  "category": [
+    {
+      "coding": [
+        {
+          "system": "http://terminology.hl7.org/CodeSystem/observation-category",
+          "code": "vital-signs",
+          "display": "Vital Signs"
+        }
+      ]
+    }
+  ],
+  "code": {
+    "coding": [
+      {
+        "system": "http://loinc.org",
+        "code": "29463-7",
+        "display": "Body weight"
+      }
+    ],
+    "text": "Body weight"
+  },
+  "subject": {
+    "reference": "Patient/e59243ba-faf6-45ab-a2c3-cf215f6f6591"
+  },
+  "encounter": {
+    "reference": "Encounter/636cfd6e-fdbc-4aba-ad36-99454a4e1a62"
+  },
+  "effectiveDateTime": "2026-10-15",
+  "valueQuantity": {
+    "value": 85.0,
+    "unit": "kg",
+    "system": "http://unitsofmeasure.org",
+    "code": "kg"
+  }
+}
