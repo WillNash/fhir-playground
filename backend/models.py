@@ -2,10 +2,25 @@
 Pydantic models for the NZ clinical data capture form.
 These are the raw clinical records — NOT FHIR yet.
 """
+import re
 import uuid
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+
+# ISO date pattern — YYYY-MM-DD, basic calendar range check.
+_ISO_DATE_RE = re.compile(r"^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$")
+
+
+def _validate_iso_date(v: object) -> object:
+    if v is None:
+        return v  # let the field's own None/optional handling take over
+    if not isinstance(v, str) or not _ISO_DATE_RE.match(v):
+        raise ValueError(f"Expected ISO date YYYY-MM-DD, got {v!r}")
+    return v
+
+
+ISODate = Annotated[str, BeforeValidator(_validate_iso_date)]
 
 # ---------------------------------------------------------------------------
 # Shared type aliases
@@ -22,6 +37,9 @@ MedicationStatus = Literal["active", "stopped", "on-hold"]
 
 # Allergy/intolerance severity
 AllergySeverity = Literal["mild", "moderate", "severe"]
+
+# Allergy/intolerance clinical status (mirrors FHIR allergyintolerance-clinical)
+AllergyClinicalStatus = Literal["active", "inactive", "resolved"]
 
 # Standard lab abnormal flags
 AbnormalFlag = Literal["H", "L", "HH", "LL", "N"]
@@ -64,13 +82,13 @@ class LabResult(BaseModel):
     reference_range_low: float | None = None
     reference_range_high: float | None = None
     abnormal_flag: AbnormalFlag | None = None
-    collected_date: str | None = None  # ISO date string
+    collected_date: ISODate | None = None
 
 
 class Condition(BaseModel):
     snomed_code: str
     display: str
-    onset_date: str | None = None  # ISO date
+    onset_date: ISODate | None = None
     status: ConditionStatus = "active"
     notes: str | None = None
 
@@ -81,8 +99,8 @@ class Medication(BaseModel):
     dose: str | None = None
     frequency: str | None = None
     route: str | None = None
-    start_date: str | None = None
-    end_date: str | None = None
+    start_date: ISODate | None = None
+    end_date: ISODate | None = None
     status: MedicationStatus = "active"
 
 
@@ -91,13 +109,13 @@ class Allergy(BaseModel):
     allergen_display: str
     reaction: str | None = None
     severity: AllergySeverity | None = None
-    status: str = "active"
+    status: AllergyClinicalStatus = "active"
 
 
 class Immunization(BaseModel):
     vaccine_code: str  # SNOMED or CVX
     vaccine_display: str
-    date_given: str | None = None
+    date_given: ISODate | None = None
     lot_number: str | None = None
     site: str | None = None
 
@@ -136,7 +154,7 @@ class PatientRecord(BaseModel):
     # Demographics
     family_name: str
     given_names: str
-    date_of_birth: str  # ISO date YYYY-MM-DD
+    date_of_birth: ISODate
     sex: SexCode
     gender_identity: str | None = None
     sex_at_birth: SexCode | None = None
@@ -156,7 +174,7 @@ class PatientRecord(BaseModel):
     pho: str | None = None
 
     # Encounter context
-    encounter_date: str  # ISO date YYYY-MM-DD
+    encounter_date: ISODate
     encounter_type: EncounterType = "ambulatory"
     presenting_complaint: str | None = None
     clinician_name: str | None = None
@@ -183,7 +201,7 @@ class PatientRecordUpdate(BaseModel):
     nhi_number: str | None = None
     family_name: str | None = None
     given_names: str | None = None
-    date_of_birth: str | None = None
+    date_of_birth: ISODate | None = None
     sex: SexCode | None = None
     gender_identity: str | None = None
     sex_at_birth: SexCode | None = None
@@ -194,7 +212,7 @@ class PatientRecordUpdate(BaseModel):
     gp_name: str | None = None
     gp_practice: str | None = None
     pho: str | None = None
-    encounter_date: str | None = None
+    encounter_date: ISODate | None = None
     encounter_type: EncounterType | None = None
     presenting_complaint: str | None = None
     clinician_name: str | None = None

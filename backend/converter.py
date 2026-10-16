@@ -55,6 +55,26 @@ _SYS_ADMIN_GENDER = "http://hl7.org/fhir/administrative-gender"
 
 _NZ_TZ = ZoneInfo("Pacific/Auckland")
 
+# Maps allergen SNOMED codes to their FHIR AllergyIntolerance.category value.
+# Unknown codes fall back to "medication" at the call site.
+_ALLERGEN_CATEGORY_MAP: dict[str, str] = {
+    "372687004": "medication",  # Penicillin
+    "373224006": "medication",  # Cephalosporins
+    "387207008": "medication",  # Ibuprofen
+    "372664007": "medication",  # Paracetamol
+    "227493005": "food",        # Cashew nuts
+    "226910009": "food",        # Peanuts
+    "102263004": "food",        # Eggs
+    "735029006": "food",        # Shellfish
+    "227021000": "food",        # Wheat
+    "227165004": "food",        # Cow milk
+    "111088007": "environment", # Latex
+    "412071004": "environment", # Pollen
+    "84489001":  "environment", # Mould
+    "260152009": "environment", # Cat dander
+    "260157003": "environment", # Dust mite
+}
+
 # Valid FHIR abnormal-flag codes for lab interpretations.
 _ABNORMAL_FLAG_MAP: dict[str, tuple[str, str]] = {
     "H":  ("H",  "High"),
@@ -518,16 +538,19 @@ def build_medication_statement(
 
 
 def build_allergy(allergy: dict[str, Any], patient_id: str) -> dict[str, Any]:  # Any: external JSON
+    allergen_code: str = allergy.get("allergen_code", "")
     severity = allergy.get("severity")
     fhir_severity: str | None = severity if severity in _VALID_ALLERGY_SEVERITIES else None
+    category = _ALLERGEN_CATEGORY_MAP.get(allergen_code, "medication")
+    status_code: str = allergy.get("status", "active")
 
     ai: dict[str, Any] = {
         "resourceType": "AllergyIntolerance",
         "id": _uuid(),
         "clinicalStatus": {"coding": [{
             "system": _SYS_ALLERGY_CLINICAL,
-            "code": "active",
-            "display": "Active",
+            "code": status_code,
+            "display": status_code.capitalize(),
         }]},
         "verificationStatus": {"coding": [{
             "system": _SYS_ALLERGY_VER,
@@ -535,11 +558,11 @@ def build_allergy(allergy: dict[str, Any], patient_id: str) -> dict[str, Any]:  
             "display": "Confirmed",
         }]},
         "type": "allergy",
-        "category": ["medication"],
+        "category": [category],
         "code": {
             "coding": [{
                 "system": SNOMED_SYSTEM,
-                "code": allergy.get("allergen_code", ""),
+                "code": allergen_code,
                 "display": allergy.get("allergen_display", ""),
             }],
             "text": allergy.get("allergen_display", ""),

@@ -413,7 +413,7 @@ ALLERGENS: Final[dict[str, str]] = {
     "260157003": "Dust mite",
     "227021000": "Wheat",
     "227165004": "Cow milk",
-    "372687099": "Cephalosporins",
+    "373224006": "Cephalosporins",
 }
 
 # ---------------------------------------------------------------------------
@@ -465,7 +465,7 @@ SMOKING_STATUS: Final[dict[str, str]] = {
 # ---------------------------------------------------------------------------
 
 ALCOHOL_STATUS: Final[dict[str, str]] = {
-    "219006":    "Current drinker of alcohol",
+    "228273003": "Current drinker of alcohol",
     "228276006": "Occasional drinker",
     "228274009": "Non-drinker of alcohol",
     "160573003": "Alcohol intake",
