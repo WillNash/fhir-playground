@@ -21,20 +21,21 @@ services:
     ports:
       - "8080:8080"
     environment:
-      spring.datasource.url: jdbc:postgresql://postgres:5432/hapi
-      spring.datasource.username: hapi
-      spring.datasource.password: hapi
-      spring.datasource.driverClassName: org.postgresql.Driver
-      spring.jpa.properties.hibernate.search.enabled: "false"
-      hapi.fhir.fhir_version: R4
-      hapi.fhir.allow_contains_searches: "true"
-      hapi.fhir.allow_multiple_delete: "true"
-      hapi.fhir.allow_external_references: "true"
-      hapi.fhir.narrative_enabled: "false"
-      hapi.fhir.validation.requests_enabled: "false"
-      hapi.fhir.validation.responses_enabled: "false"
-      hapi.fhir.openapi_enabled: "true"
-      hapi.fhir.cors.allow_credentials: "true"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hapi
+      SPRING_DATASOURCE_USERNAME: hapi
+      SPRING_DATASOURCE_PASSWORD: hapi
+      SPRING_DATASOURCE_DRIVERCLASSNAME: org.postgresql.Driver
+      SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT: org.hibernate.dialect.PostgreSQLDialect
+      SPRING_JPA_PROPERTIES_HIBERNATE_SEARCH_ENABLED: "false"
+      HAPI_FHIR_FHIR_VERSION: R4
+      HAPI_FHIR_ALLOW_CONTAINS_SEARCHES: "true"
+      HAPI_FHIR_ALLOW_MULTIPLE_DELETE: "true"
+      HAPI_FHIR_ALLOW_EXTERNAL_REFERENCES: "true"
+      HAPI_FHIR_NARRATIVE_ENABLED: "false"
+      HAPI_FHIR_VALIDATION_REQUESTS_ENABLED: "false"
+      HAPI_FHIR_VALIDATION_RESPONSES_ENABLED: "false"
+      HAPI_FHIR_OPENAPI_ENABLED: "true"
+      HAPI_FHIR_CORS_ALLOW_CREDENTIALS: "true"
     depends_on:
       postgres:
         condition: service_healthy
