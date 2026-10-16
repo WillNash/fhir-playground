@@ -1,7 +1,7 @@
 services:
 
   postgres:
-    image: postgres:14-alpine
+    image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: hapi
@@ -21,13 +21,23 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SPRING_CONFIG_LOCATION: file:///data/hapi/application.yaml
-    volumes:
-      - ./hapi-config:/data/hapi:ro
+      spring.datasource.url: jdbc:postgresql://postgres:5432/hapi
+      spring.datasource.username: hapi
+      spring.datasource.password: hapi
+      spring.datasource.driverClassName: org.postgresql.Driver
+      spring.jpa.properties.hibernate.search.enabled: "false"
+      hapi.fhir.fhir_version: R4
+      hapi.fhir.allow_contains_searches: "true"
+      hapi.fhir.allow_multiple_delete: "true"
+      hapi.fhir.allow_external_references: "true"
+      hapi.fhir.narrative_enabled: "false"
+      hapi.fhir.validation.requests_enabled: "false"
+      hapi.fhir.validation.responses_enabled: "false"
+      hapi.fhir.openapi_enabled: "true"
+      hapi.fhir.cors.allow_credentials: "true"
     depends_on:
       postgres:
         condition: service_healthy
-    # HAPI is a Spring Boot app — allow 90s for initial startup
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/fhir/metadata > /dev/null 2>&1 || exit 1"]
       interval: 15s
