@@ -77,7 +77,11 @@ from .snomed import (
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     init_db()
     init_fhir_store()
-    yield
+    await hapi_client.startup()
+    try:
+        yield
+    finally:
+        await hapi_client.shutdown()
 
 
 app = FastAPI(
@@ -133,7 +137,7 @@ async def get_patient_record(record_id: str) -> dict[str, Any]:
 async def update_patient_record(
     record_id: str, updates: PatientRecordUpdate
 ) -> dict[str, Any]:
-    data = {k: v for k, v in updates.model_dump().items() if v is not None}
+    data = updates.model_dump(exclude_unset=True)
     updated = update_record(record_id, data)
     if not updated:
         raise HTTPException(status_code=404, detail="Record not found")

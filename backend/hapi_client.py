@@ -7,8 +7,6 @@ HAPI_BASE_URL is read from the environment; defaults to http://localhost:8080/fh
 
 import asyncio
 import os
-from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
 import httpx
@@ -28,23 +26,30 @@ _FHIR_HEADERS: dict[str, str] = {
 FhirResource = dict[str, object]  # type: ignore[type-arg]
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Shared client lifecycle — call startup() / shutdown() from the app lifespan
 # ---------------------------------------------------------------------------
 
+_shared_client: httpx.AsyncClient | None = None
 
-@asynccontextmanager
-async def _fhir_client() -> AsyncGenerator[httpx.AsyncClient, None]:
-    """Yield a short-lived AsyncClient pre-configured for this HAPI server.
 
-    Each public function creates its own client so that callers need no
-    lifecycle management.  A long-lived shared client would be more efficient
-    but would require explicit startup/shutdown hooks in the hosting app.
-    """
-    async with httpx.AsyncClient(
-        base_url=HAPI_BASE_URL,
-        headers=_FHIR_HEADERS,
-    ) as client:
-        yield client
+async def startup() -> None:
+    """Create the shared AsyncClient. Call once from the FastAPI lifespan."""
+    global _shared_client
+    _shared_client = httpx.AsyncClient(base_url=HAPI_BASE_URL, headers=_FHIR_HEADERS)
+
+
+async def shutdown() -> None:
+    """Close the shared AsyncClient. Call once on app shutdown."""
+    global _shared_client
+    if _shared_client is not None:
+        await _shared_client.aclose()
+        _shared_client = None
+
+
+def _client() -> httpx.AsyncClient:
+    if _shared_client is None:
+        raise RuntimeError("HAPI client not started — call await hapi_client.startup() first")
+    return _shared_client
 
 
 # ---------------------------------------------------------------------------
@@ -54,21 +59,16 @@ async def _fhir_client() -> AsyncGenerator[httpx.AsyncClient, None]:
 
 async def post_bundle(bundle: dict[str, object]) -> dict[str, object]:
     """POST a FHIR transaction bundle and return the transaction-response Bundle."""
-    async with _fhir_client() as client:
-        response = await client.post("/", json=bundle, timeout=60.0)
-        response.raise_for_status()
-        return response.json()  # type: ignore[no-any-return]  # external JSON
+    response = await _client().post("/", json=bundle, timeout=60.0)
+    response.raise_for_status()
+    return response.json()  # type: ignore[no-any-return]  # external JSON
 
 
 async def get_resource(resource_type: str, resource_id: str) -> dict[str, object]:
     """Read a single FHIR resource by type and logical ID."""
-    async with _fhir_client() as client:
-        response = await client.get(
-            f"/{resource_type}/{resource_id}",
-            timeout=15.0,
-        )
-        response.raise_for_status()
-        return response.json()  # type: ignore[no-any-return]  # external JSON
+    response = await _client().get(f"/{resource_type}/{resource_id}", timeout=15.0)
+    response.raise_for_status()
+    return response.json()  # type: ignore[no-any-return]  # external JSON
 
 
 async def search(
@@ -76,14 +76,9 @@ async def search(
     params: dict[str, str] | None = None,
 ) -> dict[str, object]:
     """Run a FHIR search and return the resulting searchset Bundle."""
-    async with _fhir_client() as client:
-        response = await client.get(
-            f"/{resource_type}",
-            params=params or {},
-            timeout=20.0,
-        )
-        response.raise_for_status()
-        return response.json()  # type: ignore[no-any-return]  # external JSON
+    response = await _client().get(f"/{resource_type}", params=params or {}, timeout=20.0)
+    response.raise_for_status()
+    return response.json()  # type: ignore[no-any-return]  # external JSON
 
 
 async def patient_everything(
@@ -91,14 +86,11 @@ async def patient_everything(
     params: dict[str, str] | None = None,
 ) -> dict[str, object]:
     """Fetch all resources linked to a patient via GET /Patient/{id}/$everything."""
-    async with _fhir_client() as client:
-        response = await client.get(
-            f"/Patient/{patient_id}/$everything",
-            params=params or {},
-            timeout=60.0,
-        )
-        response.raise_for_status()
-        return response.json()  # type: ignore[no-any-return]  # external JSON
+    response = await _client().get(
+        f"/Patient/{patient_id}/$everything", params=params or {}, timeout=60.0
+    )
+    response.raise_for_status()
+    return response.json()  # type: ignore[no-any-return]  # external JSON
 
 
 async def capability_statement() -> dict[str, object]:
@@ -106,10 +98,9 @@ async def capability_statement() -> dict[str, object]:
 
     Also used as the liveness probe — see ``is_available``.
     """
-    async with _fhir_client() as client:
-        response = await client.get("/metadata", timeout=10.0)
-        response.raise_for_status()
-        return response.json()  # type: ignore[no-any-return]  # external JSON
+    response = await _client().get("/metadata", timeout=10.0)
+    response.raise_for_status()
+    return response.json()  # type: ignore[no-any-return]  # external JSON
 
 
 async def proxy_get(path: str, params: dict[str, str]) -> httpx.Response:
@@ -119,8 +110,7 @@ async def proxy_get(path: str, params: dict[str, str]) -> httpx.Response:
     ``raise_for_status`` — the caller is responsible for forwarding the
     HAPI status code and body verbatim.
     """
-    async with _fhir_client() as client:
-        return await client.get(f"/{path}", params=params, timeout=30.0)
+    return await _client().get(f"/{path}", params=params, timeout=30.0)
 
 
 # ---------------------------------------------------------------------------

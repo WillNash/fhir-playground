@@ -148,18 +148,12 @@ def get_record(record_id: str) -> dict[str, Any] | None:
 
 
 def update_record(record_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
-    """
-    Merge ``updates`` into the existing record and persist.
-
-    Fields whose value is ``None`` in ``updates`` are skipped — this
-    preserves the original behaviour where callers signal "no change" with
-    ``None``. Use ``set_fhir_bundle_id`` to explicitly clear that field.
-    """
+    """Merge ``updates`` into the existing record and persist."""
     existing = get_record(record_id)
     if existing is None:
         return None
 
-    existing.update({k: v for k, v in updates.items() if v is not None})
+    existing.update(updates)
     existing["updated_at"] = _now()
 
     with _db_conn() as conn:

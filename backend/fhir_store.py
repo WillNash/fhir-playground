@@ -10,7 +10,7 @@ import json
 import os
 import sqlite3
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Generator, TypeAlias, TypedDict
 
@@ -93,7 +93,7 @@ def _now_iso() -> str:
 
 def _today_iso() -> str:
     """Current UTC date as YYYY-MM-DD."""
-    return date.today().isoformat()
+    return datetime.now(timezone.utc).date().isoformat()
 
 
 def _display_from_codeable_concept(obj: FhirResource) -> str | None:

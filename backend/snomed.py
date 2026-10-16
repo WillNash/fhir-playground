@@ -280,24 +280,6 @@ CONDITIONS: Final[dict[str, str]] = {
 }
 
 # ---------------------------------------------------------------------------
-# SNOMED-CT procedure codes
-# System: SNOMED_SYSTEM
-# ---------------------------------------------------------------------------
-
-PROCEDURES: Final[dict[str, str]] = {
-    "171279008": "Immunization",
-    "182777000": "Intravenous drug injection",
-    "413473000": "Counselling about alcohol consumption",
-    "183450002": "Admission to hospital",
-    "392521001": "History and physical examination",
-    "310813008": "Blood test",
-    "274663001": "Chest X-ray",
-    "44178003":  "Electrocardiogram",
-    "73761001":  "Colonoscopy",
-    "71651007":  "Mammography",
-}
-
-# ---------------------------------------------------------------------------
 # LOINC observation codes (vitals and blood tests) used in NZ labs
 # System: LOINC_SYSTEM
 # Each entry carries a human-readable unit and its UCUM equivalent for FHIR.

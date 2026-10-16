@@ -86,6 +86,16 @@ _ABNORMAL_FLAG_MAP: dict[str, tuple[str, str]] = {
 # Valid severity values for AllergyIntolerance.reaction.severity (FHIR R4).
 _VALID_ALLERGY_SEVERITIES = frozenset({"mild", "moderate", "severe"})
 
+# Valid clinical status codes per resource type.
+_CONDITION_STATUSES: frozenset[str] = frozenset({"active", "resolved", "inactive"})
+_MEDICATION_STATUSES: frozenset[str] = frozenset({"active", "stopped", "on-hold"})
+
+
+def _coerce_status(raw: str | None, valid: frozenset[str], default: str = "active") -> str:
+    """Return ``raw`` if it is a recognised status code, otherwise ``default``."""
+    return raw if raw in valid else default
+
+
 # Encounter-class mapping from record field to v3-ActCode.
 _ENCOUNTER_CLASS_MAP: dict[str, dict[str, str]] = {
     "ambulatory": {"system": _SYS_ACT_CODE, "code": "AMB",  "display": "ambulatory"},
@@ -459,9 +469,7 @@ def build_condition(
     patient_id: str,
     encounter_id: str,
 ) -> dict[str, Any]:
-    _valid_statuses = {"active", "resolved", "inactive"}
-    raw_status = cond.get("status", "active")
-    clin_status = raw_status if raw_status in _valid_statuses else "active"
+    clin_status = _coerce_status(cond.get("status"), _CONDITION_STATUSES)
 
     fhir_cond: dict[str, Any] = {
         "resourceType": "Condition",
@@ -501,9 +509,7 @@ def build_medication_statement(
     patient_id: str,
     encounter_id: str,
 ) -> dict[str, Any]:
-    _valid_statuses = {"active", "stopped", "on-hold"}
-    raw_status = med.get("status", "active")
-    fhir_status = raw_status if raw_status in _valid_statuses else "active"
+    fhir_status = _coerce_status(med.get("status"), _MEDICATION_STATUSES)
 
     dosage: list[dict[str, Any]] = []
     if med.get("dose") or med.get("frequency") or med.get("route"):
