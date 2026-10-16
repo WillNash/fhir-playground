@@ -17,7 +17,6 @@ FHIR layer
 
 Reference data
   GET    /api/ref/snomed/conditions
-  GET    /api/ref/snomed/observations
   GET    /api/ref/snomed/medications
   GET    /api/ref/snomed/allergens
   GET    /api/ref/snomed/smoking
@@ -257,11 +256,6 @@ async def get_fhir_resource(resource_id: str) -> JSONResponse:
 @app.get("/api/ref/snomed/conditions")
 async def ref_conditions() -> dict[str, str]:
     return {k: v for k, v in CONDITIONS.items() if v}
-
-
-@app.get("/api/ref/snomed/observations")
-async def ref_observations() -> dict[str, Any]:
-    return OBSERVATIONS
 
 
 @app.get("/api/ref/snomed/medications")

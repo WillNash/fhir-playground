@@ -140,58 +140,80 @@ def _resource_ref(resource: dict[str, Any]) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Individual resource builders
+# Patient sub-builders (private — only called by build_patient)
 # ---------------------------------------------------------------------------
 
-def build_patient(record: dict[str, Any]) -> dict[str, Any]:  # Any: external JSON
-    patient_id = _uuid()
+def _nhi_identifiers(record: dict[str, Any]) -> list[dict[str, Any]]:
+    if not record.get("nhi_number"):
+        return []
+    return [{"use": "official", "system": NHI_SYSTEM, "value": record["nhi_number"].upper()}]
 
-    identifiers: list[dict[str, Any]] = []
-    if record.get("nhi_number"):
-        identifiers.append({
-            "use": "official",
-            "system": NHI_SYSTEM,
-            "value": record["nhi_number"].upper(),
-        })
 
-    # NZ ethnicity extensions (NZ Base IG)
-    extensions: list[dict[str, Any]] = []
+def _ethnicity_extensions(record: dict[str, Any]) -> list[dict[str, Any]]:
+    exts: list[dict[str, Any]] = []
     for code in record.get("ethnicity_codes", []):
         display = NZ_ETHNICITY.get(code, code)
-        extensions.append({
+        exts.append({
             "url": "http://hl7.org.nz/fhir/StructureDefinition/nz-ethnicity",
             "valueCodeableConcept": {
-                "coding": [{
-                    "system": NZ_ETHNICITY_SYSTEM,
-                    "code": code,
-                    "display": display,
-                }],
+                "coding": [{"system": NZ_ETHNICITY_SYSTEM, "code": code, "display": display}],
                 "text": display,
             },
         })
+    return exts
 
-    given = [n.strip() for n in record.get("given_names", "").split() if n.strip()]
 
-    address: list[dict[str, Any]] = []
+def _patient_address(record: dict[str, Any]) -> list[dict[str, Any]]:
     addr_raw = record.get("address") or {}
-    if isinstance(addr_raw, dict) and any(addr_raw.values()):
-        a: dict[str, Any] = {"use": "home", "type": "physical"}
-        if addr_raw.get("street"):
-            a["line"] = [addr_raw["street"]]
-        if addr_raw.get("suburb"):
-            a["district"] = addr_raw["suburb"]
-        if addr_raw.get("city"):
-            a["city"] = addr_raw["city"]
-        if addr_raw.get("postcode"):
-            a["postalCode"] = addr_raw["postcode"]
-        a["country"] = "NZ"
-        address.append(a)
+    if not (isinstance(addr_raw, dict) and any(addr_raw.values())):
+        return []
+    a: dict[str, Any] = {"use": "home", "type": "physical"}
+    if addr_raw.get("street"):
+        a["line"] = [addr_raw["street"]]
+    if addr_raw.get("suburb"):
+        a["district"] = addr_raw["suburb"]
+    if addr_raw.get("city"):
+        a["city"] = addr_raw["city"]
+    if addr_raw.get("postcode"):
+        a["postalCode"] = addr_raw["postcode"]
+    a["country"] = "NZ"
+    return [a]
 
+
+def _patient_telecom(record: dict[str, Any]) -> list[dict[str, Any]]:
     telecom: list[dict[str, Any]] = []
     if record.get("phone"):
         telecom.append({"system": "phone", "value": record["phone"], "use": "mobile"})
     if record.get("email"):
         telecom.append({"system": "email", "value": record["email"]})
+    return telecom
+
+
+def _patient_extra_extensions(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """Gender identity and sex-at-birth NZ Base IG extensions."""
+    exts: list[dict[str, Any]] = []
+    if record.get("gender_identity"):
+        exts.append({
+            "url": "http://hl7.org.nz/fhir/StructureDefinition/gender-original-text",
+            "valueString": record["gender_identity"],
+        })
+    if sab := record.get("sex_at_birth"):
+        exts.append({
+            "url": "http://hl7.org.nz/fhir/StructureDefinition/sex-at-birth",
+            "valueCodeableConcept": {
+                "coding": [{"system": _SYS_ADMIN_GENDER, "code": sab, "display": sab.capitalize()}]
+            },
+        })
+    return exts
+
+
+# ---------------------------------------------------------------------------
+# Individual resource builders
+# ---------------------------------------------------------------------------
+
+def build_patient(record: dict[str, Any]) -> dict[str, Any]:  # Any: external JSON
+    patient_id = _uuid()
+    extensions = _ethnicity_extensions(record) + _patient_extra_extensions(record)
 
     patient: dict[str, Any] = {
         "resourceType": "Patient",
@@ -200,11 +222,11 @@ def build_patient(record: dict[str, Any]) -> dict[str, Any]:  # Any: external JS
             "profile": [NZ_BASE_PATIENT_PROFILE],
             "lastUpdated": _now_nz(),
         },
-        "identifier": identifiers,
+        "identifier": _nhi_identifiers(record),
         "name": [{
             "use": "official",
             "family": record.get("family_name", ""),
-            "given": given,
+            "given": [n.strip() for n in record.get("given_names", "").split() if n.strip()],
         }],
         "birthDate": record.get("date_of_birth", ""),
         "gender": record.get("sex", "unknown"),
@@ -212,29 +234,12 @@ def build_patient(record: dict[str, Any]) -> dict[str, Any]:  # Any: external JS
 
     if extensions:
         patient["extension"] = extensions
+    address = _patient_address(record)
     if address:
         patient["address"] = address
+    telecom = _patient_telecom(record)
     if telecom:
         patient["telecom"] = telecom
-
-    if record.get("gender_identity"):
-        patient.setdefault("extension", []).append({
-            "url": "http://hl7.org.nz/fhir/StructureDefinition/gender-original-text",
-            "valueString": record["gender_identity"],
-        })
-
-    # NZ Base IG sex-at-birth extension (confirmed URL from NzPatient ci-build)
-    if sab := record.get("sex_at_birth"):
-        patient.setdefault("extension", []).append({
-            "url": "http://hl7.org.nz/fhir/StructureDefinition/sex-at-birth",
-            "valueCodeableConcept": {
-                "coding": [{
-                    "system": _SYS_ADMIN_GENDER,
-                    "code": sab,
-                    "display": sab.capitalize(),
-                }]
-            },
-        })
 
     return patient
 
