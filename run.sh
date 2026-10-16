@@ -14,16 +14,18 @@ echo "  ================================================"
 echo ""
 
 # ── Optional: start HAPI FHIR server ─────────────────────────
-# If Docker is available and HAPI is not yet running, offer to start it.
 if command -v docker &>/dev/null && command -v docker-compose &>/dev/null 2>&1 || \
    command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
-  if ! curl -sf http://localhost:8080/fhir/metadata -o /dev/null 2>/dev/null; then
-    echo "  HAPI FHIR server is not running."
-    echo "  To start it (in background, takes ~90s on first run):"
-    echo "    docker compose up -d"
+  if curl -sf http://localhost:8080/fhir/metadata -o /dev/null 2>/dev/null; then
+    echo "  HAPI FHIR: online at http://localhost:8080/fhir"
+    echo ""
+  elif docker compose ps --status running 2>/dev/null | grep -q hapi; then
+    echo "  HAPI FHIR: container is starting (takes ~90s on first run)."
+    echo "  The FHIR Store tab will show HAPI Online once it is ready."
     echo ""
   else
-    echo "  HAPI FHIR: online at http://localhost:8080/fhir"
+    echo "  HAPI FHIR server is not running."
+    echo "  To start it:  docker compose up -d"
     echo ""
   fi
 fi

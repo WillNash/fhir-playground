@@ -44,6 +44,7 @@ def init_fhir_store() -> None:
             CREATE INDEX IF NOT EXISTS idx_fhir_date ON fhir_index (date);
             CREATE INDEX IF NOT EXISTS idx_fhir_record ON fhir_index (record_id);
         """)
+    _purge_orphaned_index_entries()
 
 
 def save_resource(resource: Dict[str, Any], record_id: Optional[str] = None) -> str:
@@ -158,9 +159,23 @@ def save_resource(resource: Dict[str, Any], record_id: Optional[str] = None) -> 
     return resource_id
 
 
+def _purge_orphaned_index_entries() -> int:
+    """Remove index rows whose JSON file no longer exists. Returns count removed."""
+    with _get_index_conn() as conn:
+        rows = conn.execute("SELECT id FROM fhir_index").fetchall()
+    orphans = [r["id"] for r in rows if not os.path.exists(os.path.join(FHIR_DIR, f"{r['id']}.json"))]
+    if orphans:
+        with _get_index_conn() as conn:
+            conn.executemany("DELETE FROM fhir_index WHERE id = ?", [(oid,) for oid in orphans])
+    return len(orphans)
+
+
 def get_resource(resource_id: str) -> Optional[Dict[str, Any]]:
     path = os.path.join(FHIR_DIR, f"{resource_id}.json")
     if not os.path.exists(path):
+        # Clean up the stale index entry if present
+        with _get_index_conn() as conn:
+            conn.execute("DELETE FROM fhir_index WHERE id = ?", (resource_id,))
         return None
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
