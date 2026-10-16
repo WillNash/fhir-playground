@@ -17,10 +17,9 @@ All resources reference the NZ Base IG profiles where they exist:
 
 FHIR version: R4  (https://hl7.org/fhir/R4/)
 """
-from __future__ import annotations
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from .snomed import (
@@ -32,36 +31,102 @@ from .snomed import (
     NZ_ETHNICITY,
 )
 
+# ---------------------------------------------------------------------------
 # NZ Base IG profile URLs (canonical — https://fhir.org.nz/ig/base/)
+# ---------------------------------------------------------------------------
 NZ_BASE_PATIENT_PROFILE = "https://fhir.org.nz/ig/base/StructureDefinition/NzPatient"
 NZ_BASE_ENCOUNTER_PROFILE = "https://fhir.org.nz/ig/base/StructureDefinition/NzEncounter"
 
 FHIR_VERSION = "4.0.1"
 
+# ---------------------------------------------------------------------------
+# Repeated FHIR terminology system URLs — named to avoid silent typos
+# ---------------------------------------------------------------------------
+_SYS_OBS_CATEGORY = "http://terminology.hl7.org/CodeSystem/observation-category"
+_SYS_ACT_CODE = "http://terminology.hl7.org/CodeSystem/v3-ActCode"
+_SYS_UCUM = "http://unitsofmeasure.org"
+_SYS_OBS_INTERP = "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation"
+_SYS_COND_CLINICAL = "http://terminology.hl7.org/CodeSystem/condition-clinical"
+_SYS_COND_VER = "http://terminology.hl7.org/CodeSystem/condition-ver-status"
+_SYS_ALLERGY_CLINICAL = "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical"
+_SYS_ALLERGY_VER = "http://terminology.hl7.org/CodeSystem/allergyintolerance-verification"
+_SYS_ORG_TYPE = "http://terminology.hl7.org/CodeSystem/organization-type"
+_SYS_ADMIN_GENDER = "http://hl7.org/fhir/administrative-gender"
+
 _NZ_TZ = ZoneInfo("Pacific/Auckland")
 
+# Valid FHIR abnormal-flag codes for lab interpretations.
+_ABNORMAL_FLAG_MAP: dict[str, tuple[str, str]] = {
+    "H":  ("H",  "High"),
+    "L":  ("L",  "Low"),
+    "HH": ("HH", "Critical High"),
+    "LL": ("LL", "Critical Low"),
+}
+
+# Valid severity values for AllergyIntolerance.reaction.severity (FHIR R4).
+_VALID_ALLERGY_SEVERITIES = frozenset({"mild", "moderate", "severe"})
+
+# Encounter-class mapping from record field to v3-ActCode.
+_ENCOUNTER_CLASS_MAP: dict[str, dict[str, str]] = {
+    "ambulatory": {"system": _SYS_ACT_CODE, "code": "AMB",  "display": "ambulatory"},
+    "inpatient":  {"system": _SYS_ACT_CODE, "code": "IMP",  "display": "inpatient"},
+    "emergency":  {"system": _SYS_ACT_CODE, "code": "EMER", "display": "emergency"},
+    "telehealth": {"system": _SYS_ACT_CODE, "code": "VR",   "display": "virtual"},
+}
+
+# LOINC code -> (systolic field, diastolic field) for the BP panel.
+_VITAL_FIELD_TO_LOINC: dict[str, str] = {
+    "systolic_bp":     "8480-6",
+    "diastolic_bp":    "8462-4",
+    "heart_rate":      "8867-4",
+    "respiratory_rate": "9279-1",
+    "temperature":     "8310-5",
+    "weight_kg":       "29463-7",
+    "height_cm":       "8302-2",
+    "bmi":             "39156-5",
+}
+
+
+# ---------------------------------------------------------------------------
+# Small private helpers
+# ---------------------------------------------------------------------------
 
 def _now_nz() -> str:
-    """Return current NZ time as ISO 8601 with NZ UTC offset (+13:00 NZDT or +12:00 NZST)."""
+    """Return the current NZ time as ISO 8601 with NZ UTC offset (+13:00 NZDT / +12:00 NZST)."""
     return datetime.now(_NZ_TZ).isoformat(timespec="seconds")
+
+
+def _today_nz() -> str:
+    """Return the current NZ date as an ISO 8601 date string (YYYY-MM-DD)."""
+    return datetime.now(_NZ_TZ).date().isoformat()
 
 
 def _uuid() -> str:
     return str(uuid.uuid4())
 
 
-def _ref(resource_type: str, resource_id: str) -> Dict[str, str]:
+def _ref(resource_type: str, resource_id: str) -> dict[str, str]:
     return {"reference": f"{resource_type}/{resource_id}"}
+
+
+def _obs_category(code: str, display: str) -> list[dict[str, Any]]:
+    """Return a FHIR Observation.category element for the given category code."""
+    return [{"coding": [{"system": _SYS_OBS_CATEGORY, "code": code, "display": display}]}]
+
+
+def _resource_ref(resource: dict[str, Any]) -> dict[str, str]:
+    """Return a minimal {resourceType, id} dict for Composition section entries."""
+    return {"resourceType": resource["resourceType"], "id": resource["id"]}
 
 
 # ---------------------------------------------------------------------------
 # Individual resource builders
 # ---------------------------------------------------------------------------
 
-def build_patient(record: Dict[str, Any]) -> Dict[str, Any]:
+def build_patient(record: dict[str, Any]) -> dict[str, Any]:  # Any: external JSON
     patient_id = _uuid()
 
-    identifiers = []
+    identifiers: list[dict[str, Any]] = []
     if record.get("nhi_number"):
         identifiers.append({
             "use": "official",
@@ -70,7 +135,7 @@ def build_patient(record: Dict[str, Any]) -> Dict[str, Any]:
         })
 
     # NZ ethnicity extensions (NZ Base IG)
-    extensions = []
+    extensions: list[dict[str, Any]] = []
     for code in record.get("ethnicity_codes", []):
         display = NZ_ETHNICITY.get(code, code)
         extensions.append({
@@ -87,15 +152,12 @@ def build_patient(record: Dict[str, Any]) -> Dict[str, Any]:
 
     given = [n.strip() for n in record.get("given_names", "").split() if n.strip()]
 
-    address = []
+    address: list[dict[str, Any]] = []
     addr_raw = record.get("address") or {}
     if isinstance(addr_raw, dict) and any(addr_raw.values()):
-        lines = []
+        a: dict[str, Any] = {"use": "home", "type": "physical"}
         if addr_raw.get("street"):
-            lines.append(addr_raw["street"])
-        a = {"use": "home", "type": "physical"}
-        if lines:
-            a["line"] = lines
+            a["line"] = [addr_raw["street"]]
         if addr_raw.get("suburb"):
             a["district"] = addr_raw["suburb"]
         if addr_raw.get("city"):
@@ -105,13 +167,13 @@ def build_patient(record: Dict[str, Any]) -> Dict[str, Any]:
         a["country"] = "NZ"
         address.append(a)
 
-    telecom = []
+    telecom: list[dict[str, Any]] = []
     if record.get("phone"):
         telecom.append({"system": "phone", "value": record["phone"], "use": "mobile"})
     if record.get("email"):
         telecom.append({"system": "email", "value": record["email"]})
 
-    patient: Dict[str, Any] = {
+    patient: dict[str, Any] = {
         "resourceType": "Patient",
         "id": patient_id,
         "meta": {
@@ -134,6 +196,7 @@ def build_patient(record: Dict[str, Any]) -> Dict[str, Any]:
         patient["address"] = address
     if telecom:
         patient["telecom"] = telecom
+
     if record.get("gender_identity"):
         patient.setdefault("extension", []).append({
             "url": "http://hl7.org.nz/fhir/StructureDefinition/gender-original-text",
@@ -141,13 +204,12 @@ def build_patient(record: Dict[str, Any]) -> Dict[str, Any]:
         })
 
     # NZ Base IG sex-at-birth extension (confirmed URL from NzPatient ci-build)
-    sab = record.get("sex_at_birth")
-    if sab:
+    if sab := record.get("sex_at_birth"):
         patient.setdefault("extension", []).append({
             "url": "http://hl7.org.nz/fhir/StructureDefinition/sex-at-birth",
             "valueCodeableConcept": {
                 "coding": [{
-                    "system": "http://hl7.org/fhir/administrative-gender",
+                    "system": _SYS_ADMIN_GENDER,
                     "code": sab,
                     "display": sab.capitalize(),
                 }]
@@ -157,18 +219,17 @@ def build_patient(record: Dict[str, Any]) -> Dict[str, Any]:
     return patient
 
 
-def build_organization_ref(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Return a contained Organization if GP practice is known."""
+def build_organization_ref(record: dict[str, Any]) -> dict[str, Any] | None:  # Any: external JSON
+    """Return a contained Organization resource if a GP practice is recorded."""
     if not record.get("gp_practice"):
         return None
-    org_id = _uuid()
     return {
         "resourceType": "Organization",
-        "id": org_id,
+        "id": _uuid(),
         "name": record["gp_practice"],
         "type": [{
             "coding": [{
-                "system": "http://terminology.hl7.org/CodeSystem/organization-type",
+                "system": _SYS_ORG_TYPE,
                 "code": "prov",
                 "display": "Healthcare Provider",
             }]
@@ -176,22 +237,16 @@ def build_organization_ref(record: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     }
 
 
-def build_encounter(record: Dict[str, Any], patient_id: str) -> Dict[str, Any]:
+def build_encounter(record: dict[str, Any], patient_id: str) -> dict[str, Any]:  # Any: external JSON
     encounter_id = _uuid()
 
-    # Map encounter type to FHIR class
-    type_map = {
-        "ambulatory": {"system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "AMB", "display": "ambulatory"},
-        "inpatient": {"system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "IMP", "display": "inpatient"},
-        "emergency": {"system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "EMER", "display": "emergency"},
-        "telehealth": {"system": "http://terminology.hl7.org/CodeSystem/v3-ActCode", "code": "VR", "display": "virtual"},
-    }
-    enc_class = type_map.get(record.get("encounter_type", "ambulatory"),
-                              type_map["ambulatory"])
+    enc_class = _ENCOUNTER_CLASS_MAP.get(
+        record.get("encounter_type", "ambulatory"),
+        _ENCOUNTER_CLASS_MAP["ambulatory"],
+    )
+    enc_date = record.get("encounter_date", _today_nz())
 
-    enc_date = record.get("encounter_date", _now_nz()[:10])
-
-    encounter: Dict[str, Any] = {
+    encounter: dict[str, Any] = {
         "resourceType": "Encounter",
         "id": encounter_id,
         "meta": {
@@ -205,52 +260,42 @@ def build_encounter(record: Dict[str, Any], patient_id: str) -> Dict[str, Any]:
     }
 
     if record.get("presenting_complaint"):
-        encounter["reasonCode"] = [{
-            "text": record["presenting_complaint"],
-        }]
+        encounter["reasonCode"] = [{"text": record["presenting_complaint"]}]
 
     if record.get("clinician_name"):
-        enc_type_code = record.get("clinician_role", "GP")
         encounter["participant"] = [{
-            "type": [{"text": enc_type_code}],
+            "type": [{"text": record.get("clinician_role", "GP")}],
             "individual": {"display": record["clinician_name"]},
         }]
 
     return encounter
 
 
-def build_vitals(vitals_raw: Dict[str, Any], patient_id: str, encounter_id: str,
-                  encounter_date: str) -> List[Dict[str, Any]]:
+def build_vitals(
+    vitals_raw: dict[str, Any],  # Any: external JSON
+    patient_id: str,
+    encounter_id: str,
+    encounter_date: str,
+) -> list[dict[str, Any]]:
     """Build FHIR Observation resources for each vital sign recorded."""
-    observations = []
+    observations: list[dict[str, Any]] = []
+    category = _obs_category("vital-signs", "Vital Signs")
 
-    # Map of field name -> LOINC code (spo2 handled separately below)
-    field_map = {
-        "systolic_bp": "8480-6",
-        "diastolic_bp": "8462-4",
-        "heart_rate": "8867-4",
-        "respiratory_rate": "9279-1",
-        "temperature": "8310-5",
-        "weight_kg": "29463-7",
-        "height_cm": "8302-2",
-        "bmi": "39156-5",
-    }
-
-    # Build BP panel separately if both components present
+    # Blood pressure panel — built from both components together (FHIR R4 BP profile).
     sbp = vitals_raw.get("systolic_bp")
     dbp = vitals_raw.get("diastolic_bp")
     if sbp and dbp:
-        bp_id = _uuid()
         observations.append({
             "resourceType": "Observation",
-            "id": bp_id,
+            "id": _uuid(),
             "meta": {"profile": ["http://hl7.org/fhir/StructureDefinition/bp"]},
             "status": "final",
-            "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category",
-                                       "code": "vital-signs", "display": "Vital Signs"}]}],
-            "code": {"coding": [{"system": LOINC_SYSTEM, "code": "85354-9",
-                                  "display": "Blood pressure panel with all children optional"}],
-                     "text": "Blood pressure"},
+            "category": category,
+            "code": {
+                "coding": [{"system": LOINC_SYSTEM, "code": "85354-9",
+                             "display": "Blood pressure panel with all children optional"}],
+                "text": "Blood pressure",
+            },
             "subject": _ref("Patient", patient_id),
             "encounter": _ref("Encounter", encounter_id),
             "effectiveDateTime": encounter_date,
@@ -259,27 +304,25 @@ def build_vitals(vitals_raw: Dict[str, Any], patient_id: str, encounter_id: str,
                     "code": {"coding": [{"system": LOINC_SYSTEM, "code": "8480-6",
                                          "display": "Systolic blood pressure"}]},
                     "valueQuantity": {"value": sbp, "unit": "mmHg",
-                                      "system": "http://unitsofmeasure.org", "code": "mm[Hg]"},
+                                      "system": _SYS_UCUM, "code": "mm[Hg]"},
                 },
                 {
                     "code": {"coding": [{"system": LOINC_SYSTEM, "code": "8462-4",
                                          "display": "Diastolic blood pressure"}]},
                     "valueQuantity": {"value": dbp, "unit": "mmHg",
-                                      "system": "http://unitsofmeasure.org", "code": "mm[Hg]"},
+                                      "system": _SYS_UCUM, "code": "mm[Hg]"},
                 },
             ],
         })
 
-    # SpO2 — dual-coded per FHIR R4 Vital Signs profile (primary 2708-6, supplementary 59408-5)
+    # SpO2 — dual-coded per FHIR R4 Vital Signs profile (primary 2708-6, supplementary 59408-5).
     spo2_val = vitals_raw.get("spo2")
     if spo2_val is not None:
-        spo2_id = _uuid()
         observations.append({
             "resourceType": "Observation",
-            "id": spo2_id,
+            "id": _uuid(),
             "status": "final",
-            "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category",
-                                       "code": "vital-signs", "display": "Vital Signs"}]}],
+            "category": category,
             "code": {
                 "coding": [
                     {"system": LOINC_SYSTEM, "code": "2708-6",
@@ -295,128 +338,125 @@ def build_vitals(vitals_raw: Dict[str, Any], patient_id: str, encounter_id: str,
             "valueQuantity": {
                 "value": spo2_val,
                 "unit": "%",
-                "system": "http://unitsofmeasure.org",
+                "system": _SYS_UCUM,
                 "code": "%",
             },
         })
 
-    # Remaining individual vitals
+    # Remaining individual vitals (BP components skipped — already handled above).
     skip_for_bp = {"systolic_bp", "diastolic_bp"}
-    for field, loinc in field_map.items():
+    for field, loinc in _VITAL_FIELD_TO_LOINC.items():
         if field in skip_for_bp:
             continue
         value = vitals_raw.get(field)
         if value is None:
             continue
         obs_meta = OBSERVATIONS.get(loinc, {})
-        obs_id = _uuid()
-        obs: Dict[str, Any] = {
+        observations.append({
             "resourceType": "Observation",
-            "id": obs_id,
+            "id": _uuid(),
             "status": "final",
-            "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category",
-                                       "code": "vital-signs", "display": "Vital Signs"}]}],
-            "code": {"coding": [{"system": LOINC_SYSTEM, "code": loinc,
-                                  "display": obs_meta.get("display", field)}],
-                     "text": obs_meta.get("display", field)},
+            "category": category,
+            "code": {
+                "coding": [{"system": LOINC_SYSTEM, "code": loinc,
+                             "display": obs_meta.get("display", field)}],
+                "text": obs_meta.get("display", field),
+            },
             "subject": _ref("Patient", patient_id),
             "encounter": _ref("Encounter", encounter_id),
             "effectiveDateTime": encounter_date,
             "valueQuantity": {
                 "value": value,
                 "unit": obs_meta.get("unit", ""),
-                "system": "http://unitsofmeasure.org",
+                "system": _SYS_UCUM,
                 "code": obs_meta.get("ucum", ""),
             },
-        }
-        observations.append(obs)
+        })
 
     return observations
 
 
-def build_lab_observation(lab: Dict[str, Any], patient_id: str, encounter_id: str) -> Dict[str, Any]:
-    obs_meta = OBSERVATIONS.get(lab.get("loinc_code", ""), {})
-    obs_id = _uuid()
-    obs: Dict[str, Any] = {
+def build_lab_observation(
+    lab: dict[str, Any],  # Any: external JSON
+    patient_id: str,
+    encounter_id: str,
+) -> dict[str, Any]:
+    loinc_code: str = lab.get("loinc_code", "")
+    obs_meta = OBSERVATIONS.get(loinc_code, {})
+    unit = lab.get("unit", obs_meta.get("unit", ""))
+    ucum = obs_meta.get("ucum", unit)
+
+    obs: dict[str, Any] = {
         "resourceType": "Observation",
-        "id": obs_id,
+        "id": _uuid(),
         "status": "final",
-        "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category",
-                                   "code": "laboratory", "display": "Laboratory"}]}],
-        "code": {"coding": [{"system": LOINC_SYSTEM, "code": lab["loinc_code"],
-                              "display": obs_meta.get("display", lab.get("loinc_code", ""))}],
-                 "text": obs_meta.get("display", lab.get("loinc_code", ""))},
+        "category": _obs_category("laboratory", "Laboratory"),
+        "code": {
+            "coding": [{"system": LOINC_SYSTEM, "code": loinc_code,
+                         "display": obs_meta.get("display", loinc_code)}],
+            "text": obs_meta.get("display", loinc_code),
+        },
         "subject": _ref("Patient", patient_id),
         "encounter": _ref("Encounter", encounter_id),
-        "effectiveDateTime": lab.get("collected_date", _now_nz()[:10]),
+        "effectiveDateTime": lab.get("collected_date", _today_nz()),
         "valueQuantity": {
             "value": lab["value"],
-            "unit": lab.get("unit", obs_meta.get("unit", "")),
-            "system": "http://unitsofmeasure.org",
-            "code": obs_meta.get("ucum", lab.get("unit", "")),
+            "unit": unit,
+            "system": _SYS_UCUM,
+            "code": ucum,
         },
     }
 
-    # Reference range
     low = lab.get("reference_range_low")
     high = lab.get("reference_range_high")
     if low is not None or high is not None:
-        rr: Dict[str, Any] = {}
+        rr: dict[str, Any] = {}
         if low is not None:
-            rr["low"] = {"value": low, "unit": lab.get("unit", ""),
-                         "system": "http://unitsofmeasure.org",
-                         "code": obs_meta.get("ucum", "")}
+            rr["low"] = {"value": low, "unit": unit, "system": _SYS_UCUM, "code": ucum}
         if high is not None:
-            rr["high"] = {"value": high, "unit": lab.get("unit", ""),
-                          "system": "http://unitsofmeasure.org",
-                          "code": obs_meta.get("ucum", "")}
+            rr["high"] = {"value": high, "unit": unit, "system": _SYS_UCUM, "code": ucum}
         obs["referenceRange"] = [rr]
 
     flag = lab.get("abnormal_flag")
     if flag and flag != "N":
-        interp_map = {
-            "H": ("H", "High"),
-            "L": ("L", "Low"),
-            "HH": ("HH", "Critical High"),
-            "LL": ("LL", "Critical Low"),
-        }
-        code, display = interp_map.get(flag, ("A", "Abnormal"))
+        interp_code, interp_display = _ABNORMAL_FLAG_MAP.get(flag, ("A", "Abnormal"))
         obs["interpretation"] = [{"coding": [{
-            "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
-            "code": code, "display": display,
+            "system": _SYS_OBS_INTERP,
+            "code": interp_code,
+            "display": interp_display,
         }]}]
 
     return obs
 
 
-def build_condition(cond: Dict[str, Any], patient_id: str, encounter_id: str) -> Dict[str, Any]:
-    cond_id = _uuid()
+def build_condition(
+    cond: dict[str, Any],  # Any: external JSON
+    patient_id: str,
+    encounter_id: str,
+) -> dict[str, Any]:
+    _valid_statuses = {"active", "resolved", "inactive"}
+    raw_status = cond.get("status", "active")
+    clin_status = raw_status if raw_status in _valid_statuses else "active"
 
-    status_map = {
-        "active": "active",
-        "resolved": "resolved",
-        "inactive": "inactive",
-    }
-    clin_status = status_map.get(cond.get("status", "active"), "active")
-
-    fhir_cond: Dict[str, Any] = {
+    fhir_cond: dict[str, Any] = {
         "resourceType": "Condition",
-        "id": cond_id,
+        "id": _uuid(),
         "clinicalStatus": {"coding": [{
-            "system": "http://terminology.hl7.org/CodeSystem/condition-clinical",
+            "system": _SYS_COND_CLINICAL,
             "code": clin_status,
             "display": clin_status.capitalize(),
         }]},
         "verificationStatus": {"coding": [{
-            "system": "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+            "system": _SYS_COND_VER,
             "code": "confirmed",
             "display": "Confirmed",
         }]},
-        "code": {"coding": [{
-            "system": SNOMED_SYSTEM,
-            "code": cond.get("snomed_code", ""),
-            "display": cond.get("display", ""),
-        }],
+        "code": {
+            "coding": [{
+                "system": SNOMED_SYSTEM,
+                "code": cond.get("snomed_code", ""),
+                "display": cond.get("display", ""),
+            }],
             "text": cond.get("display", ""),
         },
         "subject": _ref("Patient", patient_id),
@@ -431,19 +471,18 @@ def build_condition(cond: Dict[str, Any], patient_id: str, encounter_id: str) ->
     return fhir_cond
 
 
-def build_medication_statement(med: Dict[str, Any], patient_id: str, encounter_id: str) -> Dict[str, Any]:
-    med_id = _uuid()
+def build_medication_statement(
+    med: dict[str, Any],  # Any: external JSON
+    patient_id: str,
+    encounter_id: str,
+) -> dict[str, Any]:
+    _valid_statuses = {"active", "stopped", "on-hold"}
+    raw_status = med.get("status", "active")
+    fhir_status = raw_status if raw_status in _valid_statuses else "active"
 
-    status_map = {
-        "active": "active",
-        "stopped": "stopped",
-        "on-hold": "on-hold",
-    }
-    fhir_status = status_map.get(med.get("status", "active"), "active")
-
-    dosage: List[Dict[str, Any]] = []
+    dosage: list[dict[str, Any]] = []
     if med.get("dose") or med.get("frequency") or med.get("route"):
-        d: Dict[str, Any] = {}
+        d: dict[str, Any] = {}
         if med.get("dose"):
             d["text"] = med["dose"]
         if med.get("frequency"):
@@ -452,15 +491,16 @@ def build_medication_statement(med: Dict[str, Any], patient_id: str, encounter_i
             d["route"] = {"text": med["route"]}
         dosage.append(d)
 
-    stmt: Dict[str, Any] = {
+    stmt: dict[str, Any] = {
         "resourceType": "MedicationStatement",
-        "id": med_id,
+        "id": _uuid(),
         "status": fhir_status,
-        "medicationCodeableConcept": {"coding": [{
-            "system": SNOMED_SYSTEM,
-            "code": med.get("snomed_code", ""),
-            "display": med.get("name", ""),
-        }],
+        "medicationCodeableConcept": {
+            "coding": [{
+                "system": SNOMED_SYSTEM,
+                "code": med.get("snomed_code", ""),
+                "display": med.get("name", ""),
+            }],
             "text": med.get("name", ""),
         },
         "subject": _ref("Patient", patient_id),
@@ -477,41 +517,38 @@ def build_medication_statement(med: Dict[str, Any], patient_id: str, encounter_i
     return stmt
 
 
-def build_allergy(allergy: Dict[str, Any], patient_id: str) -> Dict[str, Any]:
-    allergy_id = _uuid()
+def build_allergy(allergy: dict[str, Any], patient_id: str) -> dict[str, Any]:  # Any: external JSON
+    severity = allergy.get("severity")
+    fhir_severity: str | None = severity if severity in _VALID_ALLERGY_SEVERITIES else None
 
-    severity_map = {
-        "mild": "mild",
-        "moderate": "moderate",
-        "severe": "severe",
-    }
-    fhir_severity = severity_map.get(allergy.get("severity", ""), None)
-
-    ai: Dict[str, Any] = {
+    ai: dict[str, Any] = {
         "resourceType": "AllergyIntolerance",
-        "id": allergy_id,
+        "id": _uuid(),
         "clinicalStatus": {"coding": [{
-            "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical",
-            "code": "active", "display": "Active",
+            "system": _SYS_ALLERGY_CLINICAL,
+            "code": "active",
+            "display": "Active",
         }]},
         "verificationStatus": {"coding": [{
-            "system": "http://terminology.hl7.org/CodeSystem/allergyintolerance-verification",
-            "code": "confirmed", "display": "Confirmed",
+            "system": _SYS_ALLERGY_VER,
+            "code": "confirmed",
+            "display": "Confirmed",
         }]},
         "type": "allergy",
         "category": ["medication"],
-        "code": {"coding": [{
-            "system": SNOMED_SYSTEM,
-            "code": allergy.get("allergen_code", ""),
-            "display": allergy.get("allergen_display", ""),
-        }],
+        "code": {
+            "coding": [{
+                "system": SNOMED_SYSTEM,
+                "code": allergy.get("allergen_code", ""),
+                "display": allergy.get("allergen_display", ""),
+            }],
             "text": allergy.get("allergen_display", ""),
         },
         "patient": _ref("Patient", patient_id),
     }
 
     if allergy.get("reaction") or fhir_severity:
-        rxn: Dict[str, Any] = {}
+        rxn: dict[str, Any] = {}
         if allergy.get("reaction"):
             rxn["manifestation"] = [{"text": allergy["reaction"]}]
         if fhir_severity:
@@ -521,39 +558,49 @@ def build_allergy(allergy: Dict[str, Any], patient_id: str) -> Dict[str, Any]:
     return ai
 
 
-def build_immunization(imm: Dict[str, Any], patient_id: str, encounter_id: str) -> Dict[str, Any]:
-    imm_id = _uuid()
-    return {
+def build_immunization(
+    imm: dict[str, Any],  # Any: external JSON
+    patient_id: str,
+    encounter_id: str,
+) -> dict[str, Any]:
+    resource: dict[str, Any] = {
         "resourceType": "Immunization",
-        "id": imm_id,
+        "id": _uuid(),
         "status": "completed",
-        "vaccineCode": {"coding": [{
-            "system": SNOMED_SYSTEM,
-            "code": imm.get("vaccine_code", ""),
-            "display": imm.get("vaccine_display", ""),
-        }],
+        "vaccineCode": {
+            "coding": [{
+                "system": SNOMED_SYSTEM,
+                "code": imm.get("vaccine_code", ""),
+                "display": imm.get("vaccine_display", ""),
+            }],
             "text": imm.get("vaccine_display", ""),
         },
         "patient": _ref("Patient", patient_id),
         "encounter": _ref("Encounter", encounter_id),
-        "occurrenceDateTime": imm.get("date_given", _now_nz()[:10]),
-        **({"lotNumber": imm["lot_number"]} if imm.get("lot_number") else {}),
-        **({"site": {"text": imm["site"]}} if imm.get("site") else {}),
+        "occurrenceDateTime": imm.get("date_given", _today_nz()),
     }
+    if imm.get("lot_number"):
+        resource["lotNumber"] = imm["lot_number"]
+    if imm.get("site"):
+        resource["site"] = {"text": imm["site"]}
+    return resource
 
 
-def build_social_history_observations(social: Dict[str, Any], patient_id: str,
-                                       encounter_id: str, encounter_date: str) -> List[Dict[str, Any]]:
-    obs_list = []
+def build_social_history_observations(
+    social: dict[str, Any],  # Any: external JSON
+    patient_id: str,
+    encounter_id: str,
+    encounter_date: str,
+) -> list[dict[str, Any]]:
+    obs_list: list[dict[str, Any]] = []
+    category = _obs_category("social-history", "Social History")
 
     if social.get("smoking_status_code"):
-        obs_id = _uuid()
         obs_list.append({
             "resourceType": "Observation",
-            "id": obs_id,
+            "id": _uuid(),
             "status": "final",
-            "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category",
-                                       "code": "social-history", "display": "Social History"}]}],
+            "category": category,
             "code": {"coding": [{"system": LOINC_SYSTEM, "code": "72166-2",
                                   "display": "Tobacco smoking status"}]},
             "subject": _ref("Patient", patient_id),
@@ -567,13 +614,11 @@ def build_social_history_observations(social: Dict[str, Any], patient_id: str,
         })
 
     if social.get("alcohol_units_per_week") is not None:
-        obs_id = _uuid()
         obs_list.append({
             "resourceType": "Observation",
-            "id": obs_id,
+            "id": _uuid(),
             "status": "final",
-            "category": [{"coding": [{"system": "http://terminology.hl7.org/CodeSystem/observation-category",
-                                       "code": "social-history", "display": "Social History"}]}],
+            "category": category,
             "code": {"coding": [{"system": LOINC_SYSTEM, "code": "74013-4",
                                   "display": "Alcoholic drinks per week"}]},
             "subject": _ref("Patient", patient_id),
@@ -582,7 +627,7 @@ def build_social_history_observations(social: Dict[str, Any], patient_id: str,
             "valueQuantity": {
                 "value": social["alcohol_units_per_week"],
                 "unit": "units/week",
-                "system": "http://unitsofmeasure.org",
+                "system": _SYS_UCUM,
                 "code": "{drinks}/wk",
             },
         })
@@ -590,21 +635,22 @@ def build_social_history_observations(social: Dict[str, Any], patient_id: str,
     return obs_list
 
 
-def build_composition(record: Dict[str, Any], patient_id: str, encounter_id: str,
-                       section_entries: Dict[str, List[Dict[str, str]]]) -> Dict[str, Any]:
-    comp_id = _uuid()
-    notes = record.get("clinical_notes", [])
+def build_composition(
+    record: dict[str, Any],  # Any: external JSON
+    patient_id: str,
+    encounter_id: str,
+    section_entries: dict[str, list[dict[str, str]]],
+) -> dict[str, Any]:
+    notes: list[dict[str, Any]] = record.get("clinical_notes", [])
 
-    sections = []
+    sections: list[dict[str, Any]] = []
     for section_name, entries in section_entries.items():
-        sec: Dict[str, Any] = {
+        sections.append({
             "title": section_name,
             "code": {"text": section_name},
             "entry": [{"reference": f"{e['resourceType']}/{e['id']}"} for e in entries],
-        }
-        sections.append(sec)
+        })
 
-    # Add free-text note sections
     for note in notes:
         sections.append({
             "title": note.get("section", "Note").title(),
@@ -617,11 +663,12 @@ def build_composition(record: Dict[str, Any], patient_id: str, encounter_id: str
 
     return {
         "resourceType": "Composition",
-        "id": comp_id,
+        "id": _uuid(),
         "status": "final",
-        "type": {"coding": [{"system": LOINC_SYSTEM, "code": "11506-3",
-                              "display": "Progress note"}],
-                 "text": "Clinical encounter note"},
+        "type": {
+            "coding": [{"system": LOINC_SYSTEM, "code": "11506-3", "display": "Progress note"}],
+            "text": "Clinical encounter note",
+        },
         "subject": _ref("Patient", patient_id),
         "encounter": _ref("Encounter", encounter_id),
         "date": _now_nz(),
@@ -635,39 +682,36 @@ def build_composition(record: Dict[str, Any], patient_id: str, encounter_id: str
 # Main entry point
 # ---------------------------------------------------------------------------
 
-def clinical_record_to_fhir_bundle(record: Dict[str, Any]) -> Dict[str, Any]:
+def clinical_record_to_fhir_bundle(record: dict[str, Any]) -> dict[str, Any]:  # Any: external JSON
     """
     Convert a raw clinical PatientRecord dict into a FHIR R4 Transaction Bundle.
     Returns the Bundle dict ready for persistence.
     """
     bundle_id = _uuid()
-    entries: List[Dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
 
-    def _entry(resource: Dict[str, Any]) -> Dict[str, Any]:
+    def _entry(resource: dict[str, Any]) -> dict[str, Any]:
         rid = resource["id"]
         rtype = resource["resourceType"]
         return {
             "fullUrl": f"urn:uuid:{rid}",
             "resource": resource,
-            "request": {
-                "method": "PUT",
-                "url": f"{rtype}/{rid}",
-            },
+            "request": {"method": "PUT", "url": f"{rtype}/{rid}"},
         }
 
     # Patient
     patient = build_patient(record)
-    patient_id = patient["id"]
+    patient_id: str = patient["id"]
     entries.append(_entry(patient))
 
     # Encounter
     encounter = build_encounter(record, patient_id)
-    encounter_id = encounter["id"]
-    encounter_date = record.get("encounter_date", _now_nz()[:10])
+    encounter_id: str = encounter["id"]
+    encounter_date: str = record.get("encounter_date", _today_nz())
     entries.append(_entry(encounter))
 
-    # Track resources per section for Composition
-    section_entries: Dict[str, List[Dict[str, str]]] = {
+    # Track resources per section for the Composition index.
+    section_entries: dict[str, list[dict[str, str]]] = {
         "Vital Signs": [],
         "Laboratory Results": [],
         "Conditions": [],
@@ -677,63 +721,51 @@ def clinical_record_to_fhir_bundle(record: Dict[str, Any]) -> Dict[str, Any]:
         "Social History": [],
     }
 
+    def _add(resource: dict[str, Any], section: str) -> None:
+        entries.append(_entry(resource))
+        section_entries[section].append(_resource_ref(resource))
+
     # Vitals
     vitals_raw = record.get("vitals") or {}
     if isinstance(vitals_raw, dict):
-        vital_obs = build_vitals(vitals_raw, patient_id, encounter_id, encounter_date)
-        for obs in vital_obs:
-            entries.append(_entry(obs))
-            section_entries["Vital Signs"].append({"resourceType": obs["resourceType"], "id": obs["id"]})
+        for obs in build_vitals(vitals_raw, patient_id, encounter_id, encounter_date):
+            _add(obs, "Vital Signs")
 
     # Lab results
     for lab in record.get("lab_results", []):
         if isinstance(lab, dict):
-            obs = build_lab_observation(lab, patient_id, encounter_id)
-            entries.append(_entry(obs))
-            section_entries["Laboratory Results"].append({"resourceType": obs["resourceType"], "id": obs["id"]})
+            _add(build_lab_observation(lab, patient_id, encounter_id), "Laboratory Results")
 
     # Conditions
     for cond in record.get("conditions", []):
         if isinstance(cond, dict):
-            fhir_cond = build_condition(cond, patient_id, encounter_id)
-            entries.append(_entry(fhir_cond))
-            section_entries["Conditions"].append({"resourceType": fhir_cond["resourceType"], "id": fhir_cond["id"]})
+            _add(build_condition(cond, patient_id, encounter_id), "Conditions")
 
     # Medications
     for med in record.get("medications", []):
         if isinstance(med, dict):
-            stmt = build_medication_statement(med, patient_id, encounter_id)
-            entries.append(_entry(stmt))
-            section_entries["Medications"].append({"resourceType": stmt["resourceType"], "id": stmt["id"]})
+            _add(build_medication_statement(med, patient_id, encounter_id), "Medications")
 
     # Allergies
     for allergy in record.get("allergies", []):
         if isinstance(allergy, dict):
-            ai = build_allergy(allergy, patient_id)
-            entries.append(_entry(ai))
-            section_entries["Allergies"].append({"resourceType": ai["resourceType"], "id": ai["id"]})
+            _add(build_allergy(allergy, patient_id), "Allergies")
 
     # Immunizations
     for imm in record.get("immunizations", []):
         if isinstance(imm, dict):
-            fhir_imm = build_immunization(imm, patient_id, encounter_id)
-            entries.append(_entry(fhir_imm))
-            section_entries["Immunizations"].append({"resourceType": fhir_imm["resourceType"], "id": fhir_imm["id"]})
+            _add(build_immunization(imm, patient_id, encounter_id), "Immunizations")
 
     # Social history
     social = record.get("social_history") or {}
     if isinstance(social, dict) and any(social.values()):
-        social_obs = build_social_history_observations(social, patient_id, encounter_id, encounter_date)
-        for obs in social_obs:
-            entries.append(_entry(obs))
-            section_entries["Social History"].append({"resourceType": obs["resourceType"], "id": obs["id"]})
+        for obs in build_social_history_observations(social, patient_id, encounter_id, encounter_date):
+            _add(obs, "Social History")
 
     # Composition (clinical document index)
-    composition = build_composition(record, patient_id, encounter_id, section_entries)
-    entries.append(_entry(composition))
+    entries.append(_entry(build_composition(record, patient_id, encounter_id, section_entries)))
 
-    # Build the Bundle
-    bundle: Dict[str, Any] = {
+    return {
         "resourceType": "Bundle",
         "id": bundle_id,
         "meta": {
@@ -749,12 +781,10 @@ def clinical_record_to_fhir_bundle(record: Dict[str, Any]) -> Dict[str, Any]:
         "entry": entries,
     }
 
-    return bundle
 
-
-def get_patient_id_from_bundle(bundle: Dict[str, Any]) -> Optional[str]:
+def get_patient_id_from_bundle(bundle: dict[str, Any]) -> str | None:  # Any: external JSON
     for entry in bundle.get("entry", []):
-        r = entry.get("resource", {})
-        if r.get("resourceType") == "Patient":
-            return r.get("id")
+        resource = entry.get("resource", {})
+        if resource.get("resourceType") == "Patient":
+            return resource.get("id")
     return None

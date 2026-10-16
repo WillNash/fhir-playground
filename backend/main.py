@@ -27,36 +27,65 @@ Reference data
   GET    /api/stats
 """
 from __future__ import annotations
-import os
-from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse, Response
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any, AsyncGenerator
 
 import httpx
-from . import hapi_client
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
+from . import hapi_client
+from .converter import clinical_record_to_fhir_bundle, get_patient_id_from_bundle
 from .db import (
-    init_db, create_record, get_record, update_record, delete_record,
-    list_records, set_fhir_bundle_id, count_records,
+    count_records,
+    create_record,
+    delete_record,
+    get_record,
+    init_db,
+    list_records,
+    set_fhir_bundle_id,
+    update_record,
 )
 from .fhir_store import (
-    init_fhir_store, save_resource, get_resource,
-    search_resources, list_all_index, count_resources,
+    count_resources,
+    get_resource,
+    init_fhir_store,
+    list_all_index,
+    save_resource,
+    search_resources,
 )
-from .converter import clinical_record_to_fhir_bundle, get_patient_id_from_bundle
 from .models import PatientRecord, PatientRecordUpdate
 from .snomed import (
-    CONDITIONS, OBSERVATIONS, MEDICATIONS, ALLERGENS,
-    SMOKING_STATUS, NZ_ETHNICITY, NZ_REGIONS, ALCOHOL_STATUS,
+    ALCOHOL_STATUS,
+    ALLERGENS,
+    CONDITIONS,
+    MEDICATIONS,
+    NZ_ETHNICITY,
+    NZ_REGIONS,
+    OBSERVATIONS,
+    SMOKING_STATUS,
 )
+
+# ---------------------------------------------------------------------------
+# Application setup
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    init_db()
+    init_fhir_store()
+    yield
+
 
 app = FastAPI(
     title="FHIR NZ Demo",
     description="NZ-flavoured FHIR R4 exploration platform",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -67,37 +96,34 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-async def startup() -> None:
-    init_db()
-    init_fhir_store()
-
-
 # ---------------------------------------------------------------------------
 # Clinical records API
 # ---------------------------------------------------------------------------
 
 @app.post("/api/records", status_code=201)
-async def create_patient_record(record: PatientRecord) -> Dict[str, Any]:
-    data = record.model_dump()
-    saved = create_record(data)
-    return saved
+async def create_patient_record(record: PatientRecord) -> dict[str, Any]:
+    return create_record(record.model_dump())
 
 
 @app.get("/api/records")
 async def list_patient_records(
-    nhi: Optional[str] = Query(None),
-    family_name: Optional[str] = Query(None),
-    encounter_date: Optional[str] = Query(None),
+    nhi: str | None = Query(None),
+    family_name: str | None = Query(None),
+    encounter_date: str | None = Query(None),
     limit: int = Query(50, le=200),
     offset: int = Query(0),
-) -> List[Dict[str, Any]]:
-    return list_records(nhi=nhi, family_name=family_name,
-                         encounter_date=encounter_date, limit=limit, offset=offset)
+) -> list[dict[str, Any]]:
+    return list_records(
+        nhi=nhi,
+        family_name=family_name,
+        encounter_date=encounter_date,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @app.get("/api/records/{record_id}")
-async def get_patient_record(record_id: str) -> Dict[str, Any]:
+async def get_patient_record(record_id: str) -> dict[str, Any]:
     rec = get_record(record_id)
     if not rec:
         raise HTTPException(status_code=404, detail="Record not found")
@@ -105,7 +131,9 @@ async def get_patient_record(record_id: str) -> Dict[str, Any]:
 
 
 @app.put("/api/records/{record_id}")
-async def update_patient_record(record_id: str, updates: PatientRecordUpdate) -> Dict[str, Any]:
+async def update_patient_record(
+    record_id: str, updates: PatientRecordUpdate
+) -> dict[str, Any]:
     data = {k: v for k, v in updates.model_dump().items() if v is not None}
     updated = update_record(record_id, data)
     if not updated:
@@ -125,40 +153,25 @@ async def delete_patient_record(record_id: str) -> Response:
 # ---------------------------------------------------------------------------
 
 @app.post("/api/records/{record_id}/convert")
-async def convert_to_fhir(record_id: str) -> Dict[str, Any]:
+async def convert_to_fhir(record_id: str) -> dict[str, Any]:
     """Convert a clinical record to a FHIR R4 Bundle, persist locally, and POST to HAPI."""
     rec = get_record(record_id)
     if not rec:
         raise HTTPException(status_code=404, detail="Clinical record not found")
 
-    bundle = clinical_record_to_fhir_bundle(rec)
+    bundle: dict[str, Any] = clinical_record_to_fhir_bundle(rec)
 
-    # Persist locally (file store + SQLite index)
+    # Persist locally (file store + SQLite index).
     bundle_id = save_resource(bundle, record_id=record_id)
     set_fhir_bundle_id(record_id, bundle_id)
     for entry in bundle.get("entry", []):
-        resource = entry.get("resource", {})
+        resource: dict[str, Any] = entry.get("resource", {})
         if resource and resource.get("resourceType") != "Bundle":
             save_resource(resource, record_id=record_id)
 
-    # POST transaction bundle to HAPI (non-blocking — failure is reported but does not fail the route)
-    hapi_result: Dict[str, Any] = {}
-    hapi_patient_id: Optional[str] = None
-    try:
-        hapi_response = await hapi_client.post_bundle(bundle)
-        # Extract the HAPI-assigned Patient location from the transaction-response
-        for entry in hapi_response.get("entry", []):
-            loc = entry.get("response", {}).get("location", "")
-            if loc.startswith("Patient/"):
-                hapi_patient_id = loc.split("/")[1].split("/_history")[0]
-                break
-        hapi_result = {
-            "status": "ok",
-            "patient_id": hapi_patient_id,
-            "entry_count": len(hapi_response.get("entry", [])),
-        }
-    except Exception as exc:
-        hapi_result = {"status": "unavailable", "detail": str(exc)}
+    # POST transaction bundle to HAPI.
+    # Failure is captured and reported but does not fail the route — HAPI is optional.
+    hapi_result = await _post_bundle_to_hapi(bundle)
 
     return {
         "bundle_id": bundle_id,
@@ -169,27 +182,53 @@ async def convert_to_fhir(record_id: str) -> Dict[str, Any]:
     }
 
 
+async def _post_bundle_to_hapi(bundle: dict[str, Any]) -> dict[str, Any]:
+    """POST a FHIR transaction bundle to HAPI and return a summary dict.
+
+    Returns a status dict with ``"ok"`` or ``"unavailable"`` — never raises.
+    """
+    try:
+        hapi_response = await hapi_client.post_bundle(bundle)
+    except Exception as exc:  # HAPI is optional; surface the error without failing the route
+        return {"status": "unavailable", "detail": str(exc)}
+
+    hapi_patient_id: str | None = None
+    for entry in hapi_response.get("entry", []):
+        loc: str = entry.get("response", {}).get("location", "")
+        if loc.startswith("Patient/"):
+            hapi_patient_id = loc.split("/")[1].split("/_history")[0]
+            break
+
+    return {
+        "status": "ok",
+        "patient_id": hapi_patient_id,
+        "entry_count": len(hapi_response.get("entry", [])),
+    }
+
+
 # ---------------------------------------------------------------------------
 # FHIR store API
 # ---------------------------------------------------------------------------
 
 @app.get("/api/fhir/all")
-async def list_all_fhir(limit: int = Query(100), offset: int = Query(0)) -> List[Dict[str, Any]]:
+async def list_all_fhir(
+    limit: int = Query(100), offset: int = Query(0)
+) -> list[dict[str, Any]]:
     return list_all_index(limit=limit, offset=offset)
 
 
 @app.get("/api/fhir")
 async def search_fhir(
-    resource_type: Optional[str] = Query(None),
-    patient_id: Optional[str] = Query(None),
-    nhi_number: Optional[str] = Query(None),
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    subject_name: Optional[str] = Query(None),
-    record_id: Optional[str] = Query(None),
+    resource_type: str | None = Query(None),
+    patient_id: str | None = Query(None),
+    nhi_number: str | None = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    subject_name: str | None = Query(None),
+    record_id: str | None = Query(None),
     limit: int = Query(50, le=200),
     offset: int = Query(0),
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     return search_resources(
         resource_type=resource_type,
         patient_id=patient_id,
@@ -204,7 +243,7 @@ async def search_fhir(
 
 
 @app.get("/api/fhir/{resource_id}")
-async def get_fhir_resource(resource_id: str) -> Any:
+async def get_fhir_resource(resource_id: str) -> JSONResponse:
     resource = get_resource(resource_id)
     if not resource:
         raise HTTPException(status_code=404, detail="FHIR resource not found")
@@ -216,52 +255,52 @@ async def get_fhir_resource(resource_id: str) -> Any:
 # ---------------------------------------------------------------------------
 
 @app.get("/api/ref/snomed/conditions")
-async def ref_conditions() -> Dict[str, str]:
+async def ref_conditions() -> dict[str, str]:
     return {k: v for k, v in CONDITIONS.items() if v}
 
 
 @app.get("/api/ref/snomed/observations")
-async def ref_observations() -> Dict[str, Any]:
+async def ref_observations() -> dict[str, Any]:
     return OBSERVATIONS
 
 
 @app.get("/api/ref/snomed/medications")
-async def ref_medications() -> Dict[str, Any]:
+async def ref_medications() -> dict[str, Any]:
     return MEDICATIONS
 
 
 @app.get("/api/ref/snomed/allergens")
-async def ref_allergens() -> Dict[str, str]:
+async def ref_allergens() -> dict[str, str]:
     return ALLERGENS
 
 
 @app.get("/api/ref/snomed/smoking")
-async def ref_smoking() -> Dict[str, str]:
+async def ref_smoking() -> dict[str, str]:
     return SMOKING_STATUS
 
 
 @app.get("/api/ref/snomed/alcohol")
-async def ref_alcohol() -> Dict[str, str]:
+async def ref_alcohol() -> dict[str, str]:
     return ALCOHOL_STATUS
 
 
 @app.get("/api/ref/ethnicity")
-async def ref_ethnicity() -> Dict[str, str]:
+async def ref_ethnicity() -> dict[str, str]:
     return NZ_ETHNICITY
 
 
 @app.get("/api/ref/regions")
-async def ref_regions() -> List[str]:
+async def ref_regions() -> list[str]:
     return NZ_REGIONS
 
 
 @app.get("/api/ref/loinc/observations")
-async def ref_loinc() -> Dict[str, Any]:
+async def ref_loinc() -> dict[str, Any]:
     return OBSERVATIONS
 
 
 @app.get("/api/stats")
-async def stats() -> Dict[str, Any]:
+async def stats() -> dict[str, Any]:
     return {
         "clinical_records": count_records(),
         "fhir_resources": count_resources(),
@@ -273,23 +312,24 @@ async def stats() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 @app.get("/api/hapi-status")
-async def get_hapi_status() -> Dict[str, Any]:
+async def get_hapi_status() -> dict[str, Any]:
     available = await hapi_client.is_available()
     starting = (not available) and await hapi_client.is_port_open()
-    base = hapi_client.HAPI_BASE_URL
-    root = base[:-5] if base.endswith("/fhir") else base
+    base: str = hapi_client.HAPI_BASE_URL
+    root = base.removesuffix("/fhir")
     return {
         "available": available,
         "starting": starting,
         "url": base,
-        "swagger_ui": root + "/fhir/swagger-ui/",
+        "swagger_ui": f"{root}/fhir/swagger-ui/",
     }
 
 
 @app.get("/api/hapi/{path:path}")
-async def hapi_proxy(path: str, request: Request) -> Any:
-    """
-    Transparent GET proxy to HAPI.  The frontend calls e.g.
+async def hapi_proxy(path: str, request: Request) -> JSONResponse:
+    """Transparent GET proxy to HAPI.
+
+    The frontend calls e.g.
       /api/hapi/Patient?identifier=…
       /api/hapi/Patient/abc123/$everything
     and this forwards the request verbatim.
@@ -312,15 +352,15 @@ async def hapi_proxy(path: str, request: Request) -> Any:
 # Serve the frontend — must be LAST (catch-all route)
 # ---------------------------------------------------------------------------
 
-FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
+_FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
-if os.path.isdir(FRONTEND_DIR):
-    app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+if _FRONTEND_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=_FRONTEND_DIR), name="static")
 
     @app.get("/")
     async def serve_index() -> FileResponse:
-        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+        return FileResponse(_FRONTEND_DIR / "index.html")
 
     @app.get("/{full_path:path}")
-    async def catch_all(full_path: str) -> FileResponse:
-        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+    async def catch_all(full_path: str) -> FileResponse:  # noqa: ARG001
+        return FileResponse(_FRONTEND_DIR / "index.html")

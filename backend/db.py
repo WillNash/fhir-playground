@@ -2,25 +2,63 @@
 SQLite persistence layer for raw clinical records.
 The FHIR store is separate (fhir_store.py).
 """
-import sqlite3
-import json
-import os
-from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
 
-DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "..", "data", "clinical.db"))
+from __future__ import annotations
+
+import json
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, TypedDict
+
+# ---------------------------------------------------------------------------
+# Path / connection
+# ---------------------------------------------------------------------------
+
+import os
+
+_DB_PATH: Path = Path(
+    os.environ.get(
+        "DB_PATH",
+        Path(__file__).parent.parent / "data" / "clinical.db",
+    )
+)
 
 
 def _get_conn() -> sqlite3.Connection:
-    os.makedirs(os.path.dirname(os.path.abspath(DB_PATH)), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 
+# ---------------------------------------------------------------------------
+# Public type
+# ---------------------------------------------------------------------------
+
+# `Any` values in the payload come from externally-supplied JSON whose shape
+# is validated upstream (by the FHIR layer), so Any is appropriate here.
+class PatientRecordDict(TypedDict, total=False):
+    record_id: str
+    nhi_number: str | None
+    family_name: str
+    given_names: str
+    date_of_birth: str
+    sex: str
+    encounter_date: str
+    encounter_type: str
+    fhir_bundle_id: str | None
+    created_at: str
+    updated_at: str
+
+
+# ---------------------------------------------------------------------------
+# Schema
+# ---------------------------------------------------------------------------
+
 def init_db() -> None:
-    """Create tables if they do not exist."""
+    """Create tables and indexes if they do not exist."""
     with _get_conn() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS patient_records (
@@ -38,19 +76,23 @@ def init_db() -> None:
                 updated_at      TEXT NOT NULL
             );
 
-            CREATE INDEX IF NOT EXISTS idx_nhi ON patient_records (nhi_number);
-            CREATE INDEX IF NOT EXISTS idx_dob ON patient_records (date_of_birth);
+            CREATE INDEX IF NOT EXISTS idx_nhi       ON patient_records (nhi_number);
+            CREATE INDEX IF NOT EXISTS idx_dob       ON patient_records (date_of_birth);
             CREATE INDEX IF NOT EXISTS idx_encounter ON patient_records (encounter_date);
         """)
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
-    """Convert a DB row to a dict, merging fhir_bundle_id into the payload."""
-    data = json.loads(row["payload"])
+def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    """Return the payload dict for a row, with fhir_bundle_id merged in."""
+    data: dict[str, Any] = json.loads(row["payload"])
     data["fhir_bundle_id"] = row["fhir_bundle_id"]
     return data
 
@@ -59,16 +101,26 @@ def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
 # CRUD
 # ---------------------------------------------------------------------------
 
-def create_record(record_dict: Dict[str, Any]) -> Dict[str, Any]:
+def create_record(record_dict: dict[str, Any]) -> dict[str, Any]:
+    """
+    Insert a new patient record.
+
+    ``record_dict`` is mutated in place (timestamps added) and returned.
+    The full dict — including timestamps — is stored as the payload so that
+    the payload always mirrors the canonical record state.
+    """
     now = _now()
     record_dict["created_at"] = now
     record_dict["updated_at"] = now
+
     with _get_conn() as conn:
         conn.execute(
-            """INSERT INTO patient_records
-               (record_id, nhi_number, family_name, given_names, date_of_birth,
-                sex, encounter_date, encounter_type, payload, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            """
+            INSERT INTO patient_records
+                (record_id, nhi_number, family_name, given_names, date_of_birth,
+                 sex, encounter_date, encounter_type, payload, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            """,
             (
                 record_dict["record_id"],
                 record_dict.get("nhi_number"),
@@ -83,30 +135,43 @@ def create_record(record_dict: Dict[str, Any]) -> Dict[str, Any]:
                 now,
             ),
         )
+
     record_dict["fhir_bundle_id"] = None
     return record_dict
 
 
-def get_record(record_id: str) -> Optional[Dict[str, Any]]:
+def get_record(record_id: str) -> dict[str, Any] | None:
     with _get_conn() as conn:
         row = conn.execute(
-            "SELECT payload, fhir_bundle_id FROM patient_records WHERE record_id = ?", (record_id,)
+            "SELECT payload, fhir_bundle_id FROM patient_records WHERE record_id = ?",
+            (record_id,),
         ).fetchone()
     return _row_to_dict(row) if row else None
 
 
-def update_record(record_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def update_record(record_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Merge ``updates`` into the existing record and persist.
+
+    Fields whose value is ``None`` in ``updates`` are skipped — this
+    preserves the original behaviour where callers signal "no change" with
+    ``None``. Use ``set_fhir_bundle_id`` to explicitly clear that field.
+    """
     existing = get_record(record_id)
-    if not existing:
+    if existing is None:
         return None
+
     existing.update({k: v for k, v in updates.items() if v is not None})
     existing["updated_at"] = _now()
+
     with _get_conn() as conn:
         conn.execute(
-            """UPDATE patient_records
+            """
+            UPDATE patient_records
                SET nhi_number=?, family_name=?, given_names=?, date_of_birth=?,
                    sex=?, encounter_date=?, encounter_type=?, payload=?, updated_at=?
-               WHERE record_id=?""",
+             WHERE record_id=?
+            """,
             (
                 existing.get("nhi_number"),
                 existing["family_name"],
@@ -120,24 +185,29 @@ def update_record(record_id: str, updates: Dict[str, Any]) -> Optional[Dict[str,
                 record_id,
             ),
         )
+
     return existing
 
 
 def delete_record(record_id: str) -> bool:
+    """Return ``True`` if a row was deleted, ``False`` if it did not exist."""
     with _get_conn() as conn:
-        c = conn.execute("DELETE FROM patient_records WHERE record_id=?", (record_id,))
-    return c.rowcount > 0
+        cursor = conn.execute(
+            "DELETE FROM patient_records WHERE record_id = ?", (record_id,)
+        )
+        return cursor.rowcount > 0
 
 
 def list_records(
-    nhi: Optional[str] = None,
-    family_name: Optional[str] = None,
-    encounter_date: Optional[str] = None,
+    nhi: str | None = None,
+    family_name: str | None = None,
+    encounter_date: str | None = None,
     limit: int = 50,
     offset: int = 0,
-) -> List[Dict[str, Any]]:
-    conditions = []
-    params: List[Any] = []
+) -> list[dict[str, Any]]:
+    conditions: list[str] = []
+    params: list[Any] = []  # mixed types required by sqlite3 parameter binding
+
     if nhi:
         conditions.append("nhi_number = ?")
         params.append(nhi)
@@ -148,26 +218,41 @@ def list_records(
         conditions.append("encounter_date = ?")
         params.append(encounter_date)
 
-    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-    params += [limit, offset]
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
     with _get_conn() as conn:
         rows = conn.execute(
-            f"SELECT payload, fhir_bundle_id FROM patient_records {where} ORDER BY encounter_date DESC LIMIT ? OFFSET ?",
-            params,
+            f"SELECT payload, fhir_bundle_id FROM patient_records"
+            f" {where}"
+            f" ORDER BY encounter_date DESC LIMIT ? OFFSET ?",
+            [*params, limit, offset],
         ).fetchall()
-    return [_row_to_dict(r) for r in rows]
+
+    return [_row_to_dict(row) for row in rows]
 
 
 def set_fhir_bundle_id(record_id: str, bundle_id: str) -> None:
+    """Link a FHIR Bundle to an existing patient record."""
     with _get_conn() as conn:
         conn.execute(
-            "UPDATE patient_records SET fhir_bundle_id=? WHERE record_id=?",
+            "UPDATE patient_records SET fhir_bundle_id = ? WHERE record_id = ?",
             (bundle_id, record_id),
         )
 
 
 def count_records() -> int:
     with _get_conn() as conn:
-        row = conn.execute("SELECT COUNT(*) as n FROM patient_records").fetchone()
+        row = conn.execute("SELECT COUNT(*) AS n FROM patient_records").fetchone()
     return row["n"]
+
+
+__all__ = [
+    "init_db",
+    "create_record",
+    "get_record",
+    "update_record",
+    "delete_record",
+    "list_records",
+    "set_fhir_bundle_id",
+    "count_records",
+]
