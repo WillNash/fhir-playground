@@ -12,7 +12,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Generator, TypedDict
+from typing import Any, Generator, TypeAlias, TypedDict
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -29,7 +29,7 @@ INDEX_DB = Path(os.environ.get("FHIR_INDEX_DB", str(_HERE / ".." / "data" / "fhi
 
 # Any is justified: values come from sqlite3.Row which maps to Python scalars;
 # the exact types depend on the column (TEXT → str | None, INTEGER → int).
-type FhirResource = dict[str, Any]
+FhirResource: TypeAlias = dict[str, Any]
 
 
 class FhirIndexRow(TypedDict):
