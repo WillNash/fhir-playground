@@ -13,6 +13,21 @@ echo "  FHIR R4  |  SNOMED-CT  |  NZ Base IG  |  LOINC"
 echo "  ================================================"
 echo ""
 
+# ── Optional: start HAPI FHIR server ─────────────────────────
+# If Docker is available and HAPI is not yet running, offer to start it.
+if command -v docker &>/dev/null && command -v docker-compose &>/dev/null 2>&1 || \
+   command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
+  if ! curl -sf http://localhost:8080/fhir/metadata -o /dev/null 2>/dev/null; then
+    echo "  HAPI FHIR server is not running."
+    echo "  To start it (in background, takes ~90s on first run):"
+    echo "    docker compose up -d"
+    echo ""
+  else
+    echo "  HAPI FHIR: online at http://localhost:8080/fhir"
+    echo ""
+  fi
+fi
+
 # ── Check Python ─────────────────────────────────────────────
 if ! command -v python3 &>/dev/null; then
   echo "ERROR: python3 is required. Install it with:"

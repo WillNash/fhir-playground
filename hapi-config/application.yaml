@@ -1,0 +1,28 @@
+hapi:
+  fhir:
+    fhir_version: R4
+    server_address: http://localhost:8080/fhir
+    allow_contains_searches: true
+    allow_multiple_delete: true
+    allow_external_references: true
+    narrative_enabled: false
+    cors:
+      allow_credentials: true
+      allowed_origin:
+        - "*"
+    # Disable validation so demo records aren't rejected for minor issues
+    validation:
+      requests_enabled: false
+      responses_enabled: false
+    openapi_enabled: true
+
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/hapi
+    username: hapi
+    password: hapi
+    driverClassName: org.postgresql.Driver
+  jpa:
+    properties:
+      hibernate.dialect: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgres94Dialect
+      hibernate.search.enabled: false

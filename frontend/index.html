@@ -260,6 +260,7 @@ pre.fhir-json {
     <button class="nav-btn" onclick="showPage('page-form')">New Encounter</button>
     <button class="nav-btn" onclick="showPage('page-records'); loadRecords()">Patient Records</button>
     <button class="nav-btn" onclick="showPage('page-fhir'); loadFhirIndex()">FHIR Store</button>
+    <span id="hapi-nav-badge" style="font-size:11px;padding:2px 7px;border-radius:10px;background:rgba(255,255,255,.15);color:rgba(255,255,255,.7);cursor:default;" title="HAPI FHIR Server">HAPI ···</span>
   </nav>
   <div class="header-stats" id="header-stats">Loading...</div>
 </header>
@@ -931,20 +932,32 @@ pre.fhir-json {
 
 <!-- ===== FHIR STORE ===== -->
 <main class="page" id="page-fhir">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
     <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">FHIR Store</h1>
-    <div style="display:flex;gap:8px;flex:1;flex-wrap:wrap;">
+    <div id="hapi-status-bar" style="display:flex;align-items:center;gap:8px;font-size:13px;"></div>
+  </div>
+
+  <!-- Tab bar -->
+  <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px;">
+    <button id="tab-local" onclick="switchFhirTab('local')"
+      style="padding:8px 20px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid var(--nz-teal);margin-bottom:-2px;color:var(--nz-teal);">
+      Local Store
+    </button>
+    <button id="tab-hapi" onclick="switchFhirTab('hapi')"
+      style="padding:8px 20px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--muted);">
+      HAPI FHIR Server
+    </button>
+  </div>
+
+  <!-- ── LOCAL STORE panel ────────────────────────────────── -->
+  <div id="fhir-panel-local">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
       <select id="fhir-type-filter" style="max-width:180px;">
         <option value="">All resource types</option>
-        <option>Bundle</option>
-        <option>Patient</option>
-        <option>Encounter</option>
-        <option>Observation</option>
-        <option>Condition</option>
-        <option>MedicationStatement</option>
-        <option>AllergyIntolerance</option>
-        <option>Immunization</option>
-        <option>Composition</option>
+        <option>Bundle</option><option>Patient</option><option>Encounter</option>
+        <option>Observation</option><option>Condition</option>
+        <option>MedicationStatement</option><option>AllergyIntolerance</option>
+        <option>Immunization</option><option>Composition</option>
       </select>
       <input type="text" id="fhir-name-filter" placeholder="Patient name..." style="max-width:180px;"/>
       <input type="text" id="fhir-nhi-filter" placeholder="NHI..." style="max-width:130px;font-family:monospace;"/>
@@ -952,31 +965,100 @@ pre.fhir-json {
       <input type="date" id="fhir-to-filter" style="max-width:150px;"/>
       <button class="btn btn-secondary btn-sm" onclick="loadFhirIndex()">Search</button>
     </div>
-  </div>
-
-  <div id="fhir-count-bar" style="font-size:13px;color:var(--muted);margin-bottom:8px;"></div>
-  <div class="card" style="margin-bottom:20px;">
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>ID</th>
-            <th>Patient</th>
-            <th>NHI</th>
-            <th>Date</th>
-            <th>Summary</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="fhir-tbody">
-          <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
-        </tbody>
-      </table>
+    <div id="fhir-count-bar" style="font-size:13px;color:var(--muted);margin-bottom:8px;"></div>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Type</th><th>ID</th><th>Patient</th><th>NHI</th><th>Date</th><th>Summary</th><th>Action</th></tr></thead>
+          <tbody id="fhir-tbody">
+            <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
-  <!-- FHIR JSON viewer -->
+  <!-- ── HAPI SERVER panel ────────────────────────────────── -->
+  <div id="fhir-panel-hapi" style="display:none;">
+
+    <!-- Server info bar -->
+    <div class="card" style="margin-bottom:16px;padding:14px 20px;">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">HAPI FHIR JPA Server</div>
+          <div id="hapi-url-display" style="font-size:13px;font-family:monospace;color:var(--text);margin-top:2px;">http://localhost:8080/fhir</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span id="hapi-status-detail" style="font-size:13px;">Checking…</span>
+          <a id="hapi-swagger-link" href="http://localhost:8080/fhir/swagger-ui/" target="_blank"
+             class="btn btn-secondary btn-sm" style="text-decoration:none;">Swagger UI ↗</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- FHIR Search -->
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header" style="font-size:14px;font-weight:700;">FHIR Search</div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <label style="font-size:12px;font-weight:600;color:var(--muted);">Resource Type</label>
+            <select id="hapi-rt" style="min-width:180px;" onchange="updateHapiSearchHint()">
+              <option>Patient</option><option>Encounter</option><option>Observation</option>
+              <option>Condition</option><option>MedicationStatement</option>
+              <option>AllergyIntolerance</option><option>Immunization</option><option>Bundle</option>
+            </select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <label style="font-size:12px;font-weight:600;color:var(--muted);">Patient NHI</label>
+            <input id="hapi-nhi" placeholder="ZZZ0016" style="width:130px;font-family:monospace;" onkeydown="if(event.key==='Enter')hapiSearch()"/>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:200px;">
+            <label style="font-size:12px;font-weight:600;color:var(--muted);" id="hapi-extra-label">Extra params</label>
+            <input id="hapi-extra" placeholder="e.g. category=vital-signs" style="width:100%;" onkeydown="if(event.key==='Enter')hapiSearch()"/>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="hapiSearch()">Search</button>
+        </div>
+        <div id="hapi-search-hint" style="font-size:12px;color:var(--muted);font-family:monospace;"></div>
+      </div>
+    </div>
+
+    <!-- $everything -->
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header" style="font-size:14px;font-weight:700;">Patient $everything</div>
+      <div style="padding:16px;">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">
+          Returns every resource in HAPI that references a patient — encounters, observations, conditions, medications, allergies, immunizations.
+          This is a standard FHIR operation used for patient summaries and care continuity.
+        </p>
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <label style="font-size:12px;font-weight:600;color:var(--muted);">Patient ID <span style="font-weight:400;">(HAPI UUID — from search results below)</span></label>
+            <input id="hapi-everything-id" placeholder="e.g. 78b3dee0-e908-4185-…" style="width:340px;font-family:monospace;" onkeydown="if(event.key==='Enter')hapiEverything()"/>
+          </div>
+          <button class="btn btn-fhir btn-sm" onclick="hapiEverything()">Run $everything</button>
+        </div>
+        <div style="margin-top:8px;font-size:12px;color:var(--muted);">
+          Tip: Search for <code>Patient</code> by NHI above → click <strong>Use</strong> next to any result to populate this field.
+        </div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="hapi-results-bar" style="font-size:13px;color:var(--muted);margin-bottom:8px;"></div>
+    <div class="card" style="margin-bottom:20px;" id="hapi-results-card" style="display:none;">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Type</th><th>ID</th><th>Summary</th><th>Actions</th></tr></thead>
+          <tbody id="hapi-tbody">
+            <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:32px;">Run a search or $everything above.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shared FHIR JSON viewer -->
   <div class="card" id="fhir-viewer" style="display:none;">
     <div class="card-header">
       <span style="font-size:14px;font-weight:700;color:var(--fhir-orange);">FHIR JSON</span>
@@ -1456,9 +1538,30 @@ async function convertRecord(recordId, btn) {
   btn.textContent = '...';
   try {
     const result = await apiPost(`/api/records/${recordId}/convert`, {});
-    showDetailPanel(`FHIR Bundle — ${result.bundle_id}`, formatFhirPanel(result.bundle));
+
+    const hapiOk  = result.hapi && result.hapi.status === 'ok';
+    const hapiPid = result.hapi && result.hapi.patient_id;
+
+    const hapiSection = hapiOk
+      ? `<div style="margin-top:16px;padding:12px 16px;background:var(--fhir-light);border-radius:8px;border:1px solid #f6d5bd;">
+           <div style="font-weight:700;font-size:13px;color:var(--fhir-orange);margin-bottom:6px;">✓ Posted to HAPI FHIR Server</div>
+           <div style="font-size:12px;color:var(--muted);">Patient ID in HAPI: <code>${hapiPid||'—'}</code></div>
+           <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+             ${hapiPid ? `<button class="btn btn-fhir btn-sm" onclick="showPage('page-fhir');switchFhirTab('hapi');document.getElementById('hapi-everything-id').value='${hapiPid}';hapiEverything('${hapiPid}');closeDetailPanel()">$everything ↗</button>` : ''}
+             <button class="btn btn-secondary btn-sm" onclick="showPage('page-fhir');switchFhirTab('hapi');closeDetailPanel()">Open HAPI tab ↗</button>
+           </div>
+         </div>`
+      : `<div style="margin-top:16px;padding:12px 16px;background:#FFF7ED;border-radius:8px;border:1px solid #fed7aa;font-size:12px;color:var(--muted);">
+           HAPI offline — bundle saved locally only. Start HAPI with <code>docker compose up -d</code> then re-convert.
+         </div>`;
+
+    showDetailPanel(
+      `FHIR Bundle — ${result.bundle_id}`,
+      formatFhirPanel(result.bundle) + hapiSection,
+    );
     await loadRecords();
     await loadStats();
+    refreshHapiStatus();
   } catch(e) {
     alert('FHIR conversion error: ' + e.message);
   } finally {
@@ -1667,6 +1770,223 @@ async function loadStats() {
 }
 
 // ============================================================
+// FHIR Store tab switcher
+// ============================================================
+function switchFhirTab(tab) {
+  document.getElementById('fhir-panel-local').style.display = tab === 'local' ? '' : 'none';
+  document.getElementById('fhir-panel-hapi').style.display = tab === 'hapi' ? '' : 'none';
+
+  const tabLocal = document.getElementById('tab-local');
+  const tabHapi  = document.getElementById('tab-hapi');
+  tabLocal.style.borderBottomColor = tab === 'local' ? 'var(--nz-teal)' : 'transparent';
+  tabLocal.style.color = tab === 'local' ? 'var(--nz-teal)' : 'var(--muted)';
+  tabHapi.style.borderBottomColor  = tab === 'hapi'  ? 'var(--fhir-orange)' : 'transparent';
+  tabHapi.style.color = tab === 'hapi' ? 'var(--fhir-orange)' : 'var(--muted)';
+
+  if (tab === 'hapi') {
+    refreshHapiStatus();
+    updateHapiSearchHint();
+  }
+}
+
+// ============================================================
+// HAPI status
+// ============================================================
+let hapiStatusTimer = null;
+
+async function refreshHapiStatus() {
+  const badge = document.getElementById('hapi-nav-badge');
+  const detail = document.getElementById('hapi-status-detail');
+  const bar = document.getElementById('hapi-status-bar');
+  try {
+    const s = await apiGet('/api/hapi-status');
+    if (s.available) {
+      badge.textContent  = '⬤ HAPI';
+      badge.style.color  = '#6ee7b7';
+      badge.title        = s.url;
+      detail.innerHTML   = '<span style="color:var(--success);font-weight:600;">⬤ Online</span>';
+      bar.innerHTML      = `<span style="font-size:12px;color:var(--success);">⬤ HAPI Online</span>
+                            <span style="font-size:12px;color:var(--muted);">${s.url}</span>`;
+      document.getElementById('hapi-url-display').textContent = s.url;
+      document.getElementById('hapi-swagger-link').href = s.swagger_ui;
+    } else {
+      setHapiOffline(badge, detail, bar);
+    }
+  } catch(e) {
+    setHapiOffline(badge, detail, bar);
+  }
+}
+
+function setHapiOffline(badge, detail, bar) {
+  badge.textContent = '⬤ HAPI';
+  badge.style.color = '#fca5a5';
+  detail.innerHTML  = '<span style="color:var(--danger);font-weight:600;">⬤ Offline</span>'
+                    + '<span style="font-size:12px;color:var(--muted);margin-left:8px;">Run: docker compose up -d</span>';
+  bar.innerHTML     = '<span style="font-size:12px;color:var(--danger);">⬤ HAPI Offline</span>'
+                    + '<span style="font-size:12px;color:var(--muted);">  Start with: docker compose up -d</span>';
+}
+
+// ============================================================
+// HAPI search hint (shows the equivalent FHIR URL)
+// ============================================================
+function updateHapiSearchHint() {
+  const rt  = document.getElementById('hapi-rt').value;
+  const nhi = document.getElementById('hapi-nhi').value.trim();
+  const extra = document.getElementById('hapi-extra').value.trim();
+  const NHI_SYS = 'https://standards.digital.health.nz/ns/nhi-id';
+
+  let label = 'Extra params';
+  if (rt === 'Patient') label = 'e.g. family=Smith or birthdate=1985-03-22';
+  else label = 'e.g. category=vital-signs&date=ge2026-01-01';
+  document.getElementById('hapi-extra-label').textContent = label;
+
+  let url = `/fhir/${rt}?_count=20`;
+  if (nhi) {
+    if (rt === 'Patient') url += `&identifier=${NHI_SYS}|${nhi}`;
+    else url += `&patient.identifier=${NHI_SYS}|${nhi}`;
+  }
+  if (extra) url += `&${extra}`;
+  document.getElementById('hapi-search-hint').textContent = `FHIR URL: GET ${url}`;
+}
+
+// ============================================================
+// HAPI search
+// ============================================================
+async function hapiSearch() {
+  const rt    = document.getElementById('hapi-rt').value;
+  const nhi   = document.getElementById('hapi-nhi').value.trim().toUpperCase();
+  const extra = document.getElementById('hapi-extra').value.trim();
+  const NHI_SYS = 'https://standards.digital.health.nz/ns/nhi-id';
+
+  const params = new URLSearchParams({ _count: '50' });
+  if (nhi) {
+    params.set(rt === 'Patient' ? 'identifier' : 'patient.identifier', `${NHI_SYS}|${nhi}`);
+  }
+  if (extra) {
+    extra.split('&').forEach(pair => {
+      const idx = pair.indexOf('=');
+      if (idx > 0) params.set(pair.slice(0, idx).trim(), pair.slice(idx + 1).trim());
+    });
+  }
+
+  const url = `/api/hapi/${rt}?${params}`;
+  renderHapiResults(url, `${rt} search`);
+}
+
+// ============================================================
+// HAPI $everything
+// ============================================================
+async function hapiEverything(patientId) {
+  const id = patientId || document.getElementById('hapi-everything-id').value.trim();
+  if (!id) { alert('Enter a Patient ID first.'); return; }
+  document.getElementById('hapi-everything-id').value = id;
+  renderHapiResults(`/api/hapi/Patient/${id}/$everything`, `Patient/${id}/$everything`);
+}
+
+// ============================================================
+// Render HAPI results (searchset bundle → table rows)
+// ============================================================
+async function renderHapiResults(url, label) {
+  const tbody = document.getElementById('hapi-tbody');
+  const bar   = document.getElementById('hapi-results-bar');
+  tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:24px;"><span class="spinner"></span></td></tr>';
+  bar.textContent = `Fetching ${label}…`;
+
+  try {
+    const bundle = await apiGet(url);
+
+    // Show the raw bundle in the viewer
+    document.getElementById('fhir-json-pre').innerHTML = syntaxHighlight(JSON.stringify(bundle, null, 2));
+    document.getElementById('fhir-viewer-title').textContent = label;
+    document.getElementById('fhir-viewer').style.display = 'block';
+
+    const entries = bundle.resourceType === 'Bundle' ? (bundle.entry || []) : [];
+    const total = bundle.total !== undefined ? bundle.total : entries.length;
+    bar.textContent = `${label} — ${total} resource${total !== 1 ? 's' : ''} (showing ${entries.length})`;
+
+    if (!entries.length) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:32px;">No resources returned.</td></tr>';
+      return;
+    }
+
+    const typeColors = {
+      Bundle:'#E8610A', Patient:'#007A4D', Encounter:'#1B4F8A',
+      Observation:'#5B21B6', Condition:'#92400E', MedicationStatement:'#065F46',
+      AllergyIntolerance:'#991B1B', Immunization:'#1E40AF', Composition:'#374151',
+    };
+
+    tbody.innerHTML = '';
+    entries.forEach(entry => {
+      const r = entry.resource || {};
+      if (!r.resourceType) return;
+      const color = typeColors[r.resourceType] || '#374151';
+      const summary = summariseResource(r);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><span style="background:${color};color:white;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;">${r.resourceType}</span></td>
+        <td><code style="font-size:11px;">${(r.id||'').substring(0,12)}…</code></td>
+        <td style="font-size:12px;">${summary}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-fhir btn-sm" onclick="showHapiResourceJson(${JSON.stringify(JSON.stringify(r))})">JSON</button>
+          ${r.resourceType === 'Patient'
+            ? `<button class="btn btn-secondary btn-sm" style="margin-left:4px;" onclick="document.getElementById('hapi-everything-id').value='${r.id}';hapiEverything('${r.id}')">$everything</button>`
+            : ''}
+          ${r.resourceType === 'Patient'
+            ? `<button class="btn btn-secondary btn-sm" style="margin-left:4px;" onclick="document.getElementById('hapi-everything-id').value='${r.id}'">Use</button>`
+            : ''}
+        </td>`;
+      tbody.appendChild(tr);
+    });
+  } catch(e) {
+    bar.textContent = '';
+    const msg = e.message.includes('503')
+      ? 'HAPI is offline. Start it with: docker compose up -d'
+      : `Error: ${e.message}`;
+    tbody.innerHTML = `<tr><td colspan="4" style="color:var(--danger);padding:16px;">${msg}</td></tr>`;
+  }
+}
+
+function showHapiResourceJson(jsonStr) {
+  const r = JSON.parse(jsonStr);
+  document.getElementById('fhir-json-pre').innerHTML = syntaxHighlight(JSON.stringify(r, null, 2));
+  document.getElementById('fhir-viewer-title').textContent = `${r.resourceType}/${r.id}`;
+  document.getElementById('fhir-viewer').style.display = 'block';
+  document.getElementById('fhir-viewer').scrollIntoView({ behavior:'smooth' });
+}
+
+// Derive a one-line summary from a FHIR resource
+function summariseResource(r) {
+  const rt = r.resourceType;
+  if (rt === 'Patient') {
+    const n = (r.name || [])[0] || {};
+    const given = (n.given || []).join(' ');
+    const family = n.family || '';
+    const nhi = ((r.identifier || []).find(i => (i.system||'').includes('nhi-id')) || {}).value || '';
+    return `${given} ${family}${nhi ? ` · NHI ${nhi}` : ''}`.trim();
+  }
+  if (rt === 'Observation') {
+    const label = (r.code||{}).text || ((r.code||{}).coding||[{}])[0].display || 'Observation';
+    const vq = r.valueQuantity;
+    if (vq) return `${label}: ${vq.value} ${vq.unit||''}`;
+    const vcc = r.valueCodeableConcept;
+    if (vcc) return `${label}: ${vcc.text || ((vcc.coding||[{}])[0].display||'')}`;
+    return label;
+  }
+  if (rt === 'Condition') return (r.code||{}).text || ((r.code||{}).coding||[{}])[0].display || 'Condition';
+  if (rt === 'MedicationStatement') return (r.medicationCodeableConcept||{}).text || 'Medication';
+  if (rt === 'AllergyIntolerance') return (r.code||{}).text || 'Allergy';
+  if (rt === 'Immunization') return (r.vaccineCode||{}).text || 'Vaccine';
+  if (rt === 'Encounter') {
+    const cls = (r.class||{}).display || (r.class||{}).code || '';
+    const dt  = (r.period||{}).start || r.date || '';
+    return `${cls} on ${dt}`.trim();
+  }
+  if (rt === 'Composition') return r.title || 'Composition';
+  if (rt === 'Bundle') return `${r.type} · ${(r.entry||[]).length} entries`;
+  return r.id || rt;
+}
+
+// ============================================================
 // Init
 // ============================================================
 window.addEventListener('DOMContentLoaded', () => {
@@ -1678,6 +1998,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
   loadRefData();
   loadStats();
+  // Poll HAPI status every 15s
+  refreshHapiStatus();
+  hapiStatusTimer = setInterval(refreshHapiStatus, 15000);
 });
 </script>
 </body>

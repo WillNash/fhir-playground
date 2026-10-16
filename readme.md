@@ -7,18 +7,41 @@ Modelled on NZ health data standards, GP workflow, and the NZ FHIR Base IG.
 QUICK START
 ════════════════════════════════════════════════════
 
-1. Make sure Python 3.10+ is installed:
+The platform has two layers:
 
-     python3 --version
+  Layer 1 — FastAPI backend + browser frontend (always available, no Docker)
+  Layer 2 — HAPI FHIR JPA server (realistic FHIR server, requires Docker)
 
-2. Run the startup script from the project directory:
+──────────────────────────────────────────────────── 
+Step 1: Start the HAPI FHIR server (recommended first)
+────────────────────────────────────────────────────
 
-     cd ~/fhir-playground       # or wherever you unpacked it
-     bash run.sh
+  docker compose up -d
 
-3. Open http://localhost:8000 in a browser.
+  HAPI takes 60-90 seconds to start on the first run (it's a Spring Boot app
+  downloading schema and initialising PostgreSQL). Check readiness with:
 
-The script installs Python dependencies automatically on first run.
+    curl http://localhost:8080/fhir/metadata   # returns JSON when ready
+
+  HAPI persists data in a named Docker volume (fhir-demo-hapi-postgres).
+  Stop with: docker compose down
+  Wipe data:  docker compose down -v
+
+  If you don't have Docker:  the platform works fully without HAPI.
+  The FHIR Store will show "HAPI Offline" — everything else is unaffected.
+
+────────────────────────────────────────────────────
+Step 2: Start the web application
+────────────────────────────────────────────────────
+
+  cd ~/fhir-playground       # or wherever you unpacked it
+  bash run.sh
+
+  Open http://localhost:8000 in a browser.
+  API docs: http://localhost:8000/docs
+  HAPI Swagger UI: http://localhost:8080/fhir/swagger-ui/
+
+  run.sh installs Python dependencies into a virtual environment on first run.
 
 ────────────────────────────────────────────────────
 Troubleshooting first-run errors
@@ -36,10 +59,7 @@ Troubleshooting first-run errors
     sudo apt install python3-pip         # Debian / Ubuntu / WSL
     # then rerun: bash run.sh
 
-macOS (Homebrew Python):
-  No extra steps needed. run.sh uses --user install if venv fails.
-
-  If you hit "externally managed environment":
+macOS:
     brew install python3                 # ensures venv support
     # then rerun: bash run.sh
 

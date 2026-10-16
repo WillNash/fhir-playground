@@ -30,10 +30,13 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, Response
+
+import httpx
+from . import hapi_client
 
 from .db import (
     init_db, create_record, get_record, update_record, delete_record,
@@ -123,25 +126,45 @@ async def delete_patient_record(record_id: str) -> Response:
 
 @app.post("/api/records/{record_id}/convert")
 async def convert_to_fhir(record_id: str) -> Dict[str, Any]:
-    """Convert a clinical record to a FHIR R4 Bundle and persist it."""
+    """Convert a clinical record to a FHIR R4 Bundle, persist locally, and POST to HAPI."""
     rec = get_record(record_id)
     if not rec:
         raise HTTPException(status_code=404, detail="Clinical record not found")
 
     bundle = clinical_record_to_fhir_bundle(rec)
+
+    # Persist locally (file store + SQLite index)
     bundle_id = save_resource(bundle, record_id=record_id)
     set_fhir_bundle_id(record_id, bundle_id)
-
-    # Persist each individual resource so the FHIR Store shows one row per resource
     for entry in bundle.get("entry", []):
         resource = entry.get("resource", {})
         if resource and resource.get("resourceType") != "Bundle":
             save_resource(resource, record_id=record_id)
 
+    # POST transaction bundle to HAPI (non-blocking — failure is reported but does not fail the route)
+    hapi_result: Dict[str, Any] = {}
+    hapi_patient_id: Optional[str] = None
+    try:
+        hapi_response = await hapi_client.post_bundle(bundle)
+        # Extract the HAPI-assigned Patient location from the transaction-response
+        for entry in hapi_response.get("entry", []):
+            loc = entry.get("response", {}).get("location", "")
+            if loc.startswith("Patient/"):
+                hapi_patient_id = loc.split("/")[1].split("/_history")[0]
+                break
+        hapi_result = {
+            "status": "ok",
+            "patient_id": hapi_patient_id,
+            "entry_count": len(hapi_response.get("entry", [])),
+        }
+    except Exception as exc:
+        hapi_result = {"status": "unavailable", "detail": str(exc)}
+
     return {
         "bundle_id": bundle_id,
         "resource_count": len(bundle.get("entry", [])),
         "patient_id": get_patient_id_from_bundle(bundle),
+        "hapi": hapi_result,
         "bundle": bundle,
     }
 
@@ -243,6 +266,42 @@ async def stats() -> Dict[str, Any]:
         "clinical_records": count_records(),
         "fhir_resources": count_resources(),
     }
+
+
+# ---------------------------------------------------------------------------
+# HAPI FHIR server — status + transparent GET proxy
+# ---------------------------------------------------------------------------
+
+@app.get("/api/hapi-status")
+async def get_hapi_status() -> Dict[str, Any]:
+    available = await hapi_client.is_available()
+    return {
+        "available": available,
+        "url": hapi_client.HAPI_BASE_URL,
+        "swagger_ui": hapi_client.HAPI_BASE_URL.rstrip("/fhir") + "/fhir/swagger-ui/",
+    }
+
+
+@app.get("/api/hapi/{path:path}")
+async def hapi_proxy(path: str, request: Request) -> Any:
+    """
+    Transparent GET proxy to HAPI.  The frontend calls e.g.
+      /api/hapi/Patient?identifier=…
+      /api/hapi/Patient/abc123/$everything
+    and this forwards the request verbatim.
+    """
+    params = dict(request.query_params)
+    try:
+        r = await hapi_client.proxy_get(path, params)
+        return JSONResponse(
+            content=r.json(),
+            status_code=r.status_code,
+            media_type="application/fhir+json",
+        )
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail="HAPI FHIR server is not reachable")
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
 
 
 # ---------------------------------------------------------------------------
