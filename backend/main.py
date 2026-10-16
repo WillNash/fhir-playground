@@ -275,10 +275,14 @@ async def stats() -> Dict[str, Any]:
 @app.get("/api/hapi-status")
 async def get_hapi_status() -> Dict[str, Any]:
     available = await hapi_client.is_available()
+    starting = (not available) and await hapi_client.is_port_open()
+    base = hapi_client.HAPI_BASE_URL
+    root = base[:-5] if base.endswith("/fhir") else base
     return {
         "available": available,
-        "url": hapi_client.HAPI_BASE_URL,
-        "swagger_ui": hapi_client.HAPI_BASE_URL.rstrip("/fhir") + "/fhir/swagger-ui/",
+        "starting": starting,
+        "url": base,
+        "swagger_ui": root + "/fhir/swagger-ui/",
     }
 
 

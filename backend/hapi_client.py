@@ -5,7 +5,9 @@ All calls use Content-Type / Accept: application/fhir+json per the FHIR spec.
 HAPI_BASE_URL is read from the environment (default: http://localhost:8080/fhir).
 """
 from __future__ import annotations
+import asyncio
 import os
+from urllib.parse import urlparse
 from typing import Any, Dict, Optional
 
 import httpx
@@ -102,6 +104,25 @@ async def proxy_get(path: str, params: Dict[str, str]) -> httpx.Response:
 async def is_available() -> bool:
     try:
         await capability_statement()
+        return True
+    except Exception:
+        return False
+
+
+async def is_port_open() -> bool:
+    """Return True if the TCP port is accepting connections (container up, Spring Boot may still be loading)."""
+    parsed = urlparse(HAPI_BASE_URL)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 8080
+    try:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port), timeout=1.0
+        )
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
         return True
     except Exception:
         return False

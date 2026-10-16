@@ -1801,20 +1801,31 @@ async function refreshHapiStatus() {
   try {
     const s = await apiGet('/api/hapi-status');
     if (s.available) {
-      badge.textContent  = '⬤ HAPI';
-      badge.style.color  = '#6ee7b7';
-      badge.title        = s.url;
-      detail.innerHTML   = '<span style="color:var(--success);font-weight:600;">⬤ Online</span>';
-      bar.innerHTML      = `<span style="font-size:12px;color:var(--success);">⬤ HAPI Online</span>
-                            <span style="font-size:12px;color:var(--muted);">${s.url}</span>`;
+      badge.textContent = '⬤ HAPI';
+      badge.style.color = '#6ee7b7';
+      badge.title       = s.url;
+      detail.innerHTML  = '<span style="color:var(--success);font-weight:600;">⬤ Online</span>';
+      bar.innerHTML     = `<span style="font-size:12px;color:var(--success);">⬤ HAPI Online</span>
+                           <span style="font-size:12px;color:var(--muted);">${s.url}</span>`;
       document.getElementById('hapi-url-display').textContent = s.url;
       document.getElementById('hapi-swagger-link').href = s.swagger_ui;
+    } else if (s.starting) {
+      setHapiStarting(badge, detail, bar);
     } else {
       setHapiOffline(badge, detail, bar);
     }
   } catch(e) {
     setHapiOffline(badge, detail, bar);
   }
+}
+
+function setHapiStarting(badge, detail, bar) {
+  badge.textContent = '◌ HAPI';
+  badge.style.color = '#fde68a';
+  detail.innerHTML  = '<span style="color:#f59e0b;font-weight:600;">◌ Starting…</span>'
+                    + '<span style="font-size:12px;color:var(--muted);margin-left:8px;">Spring Boot is loading — takes ~90s on first run</span>';
+  bar.innerHTML     = '<span style="font-size:12px;color:#f59e0b;">◌ HAPI Starting…</span>'
+                    + '<span style="font-size:12px;color:var(--muted);">  Ready in ~90s — this page updates automatically</span>';
 }
 
 function setHapiOffline(badge, detail, bar) {
