@@ -89,7 +89,7 @@ def _db_conn() -> Generator[sqlite3.Connection, None, None]:
 class PatientRecordDict(TypedDict, total=False):
     record_id: str
     patient_id: str
-    nhi_number: str | None
+    nhi_number: str
     family_name: str
     given_names: str
     date_of_birth: str
@@ -112,7 +112,7 @@ def init_db() -> None:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS patients (
                 patient_id    TEXT PRIMARY KEY,
-                nhi_number    TEXT,
+                nhi_number    TEXT NOT NULL UNIQUE,
                 family_name   TEXT NOT NULL,
                 given_names   TEXT NOT NULL,
                 date_of_birth TEXT NOT NULL,
@@ -120,7 +120,6 @@ def init_db() -> None:
                 created_at    TEXT NOT NULL,
                 updated_at    TEXT NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_patients_nhi    ON patients(nhi_number);
             CREATE INDEX IF NOT EXISTS idx_patients_family ON patients(LOWER(family_name));
 
             CREATE TABLE IF NOT EXISTS arms (
@@ -205,6 +204,36 @@ def init_db() -> None:
                 field_order                        INTEGER NOT NULL
             );
         """)
+
+        # Migrate patients.nhi_number to NOT NULL UNIQUE if upgrading from older schema
+        pragma = conn.execute("PRAGMA table_info(patients)").fetchall()
+        nhi_col = next((c for c in pragma if c["name"] == "nhi_number"), None)
+        if nhi_col is not None and nhi_col["notnull"] == 0:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.execute("""
+                CREATE TABLE patients_v2 (
+                    patient_id    TEXT PRIMARY KEY,
+                    nhi_number    TEXT NOT NULL UNIQUE,
+                    family_name   TEXT NOT NULL,
+                    given_names   TEXT NOT NULL,
+                    date_of_birth TEXT NOT NULL,
+                    sex           TEXT NOT NULL,
+                    created_at    TEXT NOT NULL,
+                    updated_at    TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                INSERT OR IGNORE INTO patients_v2
+                SELECT patient_id, nhi_number, family_name, given_names,
+                       date_of_birth, sex, created_at, updated_at
+                FROM patients WHERE nhi_number IS NOT NULL
+            """)
+            conn.execute("DROP TABLE patients")
+            conn.execute("ALTER TABLE patients_v2 RENAME TO patients")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_patients_family ON patients(LOWER(family_name))"
+            )
+            conn.execute("PRAGMA foreign_keys=ON")
 
         # Seed arm
         conn.execute("INSERT OR IGNORE INTO arms (arm_num, name) VALUES (1, 'Arm 1')")
@@ -480,37 +509,26 @@ def create_record(record_dict: dict[str, Any]) -> dict[str, Any]:
     now = _now()
 
     with _db_conn() as conn:
-        # Patient deduplication by NHI
-        nhi = record_dict.get("nhi_number")
-        patient_id: str
-        if nhi:
-            row = conn.execute(
-                "SELECT patient_id FROM patients WHERE nhi_number=?", (nhi,)
-            ).fetchone()
-            if row:
-                patient_id = row["patient_id"]
-                # Update demographics
-                conn.execute(
-                    "UPDATE patients SET family_name=?, given_names=?, date_of_birth=?, "
-                    "sex=?, updated_at=? WHERE patient_id=?",
-                    (record_dict["family_name"], record_dict["given_names"],
-                     record_dict["date_of_birth"], record_dict["sex"],
-                     now, patient_id),
-                )
-            else:
-                patient_id = str(uuid.uuid4())
-                conn.execute(
-                    "INSERT INTO patients (patient_id, nhi_number, family_name, given_names, "
-                    "date_of_birth, sex, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-                    (patient_id, nhi, record_dict["family_name"], record_dict["given_names"],
-                     record_dict["date_of_birth"], record_dict["sex"], now, now),
-                )
+        # Patient deduplication by NHI — NHI is required so always present
+        nhi: str = record_dict["nhi_number"]
+        row = conn.execute(
+            "SELECT patient_id FROM patients WHERE nhi_number=?", (nhi,)
+        ).fetchone()
+        if row:
+            patient_id: str = row["patient_id"]
+            conn.execute(
+                "UPDATE patients SET family_name=?, given_names=?, date_of_birth=?, "
+                "sex=?, updated_at=? WHERE patient_id=?",
+                (record_dict["family_name"], record_dict["given_names"],
+                 record_dict["date_of_birth"], record_dict["sex"],
+                 now, patient_id),
+            )
         else:
             patient_id = str(uuid.uuid4())
             conn.execute(
                 "INSERT INTO patients (patient_id, nhi_number, family_name, given_names, "
                 "date_of_birth, sex, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-                (patient_id, None, record_dict["family_name"], record_dict["given_names"],
+                (patient_id, nhi, record_dict["family_name"], record_dict["given_names"],
                  record_dict["date_of_birth"], record_dict["sex"], now, now),
             )
 

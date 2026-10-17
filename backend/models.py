@@ -6,7 +6,7 @@ import re
 import uuid
 from typing import Annotated, Literal, get_args
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # Missing data codes (CDISC standard)
@@ -29,6 +29,10 @@ def _validate_numeric_or_missing(v: object) -> object:
 
 
 NumericOrMissing = Annotated[float | str | None, BeforeValidator(_validate_numeric_or_missing)]
+
+# NZ NHI — both legacy (3 alpha + 4 digits) and new (3 alpha + 2 digits + 2 alpha) formats.
+# Letters exclude I and O (confusion with 1 and 0). Test NHIs start with Z.
+_NHI_RE = re.compile(r"^[A-HJ-NP-Z]{3}([0-9]{4}|[0-9]{2}[A-HJ-NP-Z]{2})$")
 
 # ISO date pattern — YYYY-MM-DD, basic calendar range check.
 _ISO_DATE_RE = re.compile(r"^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$")
@@ -167,11 +171,22 @@ class PatientRecord(BaseModel):
     # Internal ID — generated on creation
     record_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
-    # NZ NHI — the national patient identifier
-    nhi_number: str | None = Field(
-        None,
-        description="NZ National Health Index number e.g. ZZZ0008",
+    # NZ NHI — required; the national patient identifier used to link encounters
+    nhi_number: str = Field(
+        ...,
+        description="NZ National Health Index (NHI) number — legacy format e.g. ZAA0001, new format e.g. ZZZ00AB",
     )
+
+    @field_validator("nhi_number")
+    @classmethod
+    def validate_nhi(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not _NHI_RE.match(v):
+            raise ValueError(
+                "NHI must be 3 letters (A–Z excl. I/O) + 4 digits (legacy, e.g. ZAA0001) "
+                "or 3 letters + 2 digits + 2 letters (new format, e.g. ZZZ00AB)"
+            )
+        return v
 
     # Demographics
     family_name: str
@@ -222,6 +237,19 @@ class PatientRecordUpdate(BaseModel):
     """Partial update — all fields optional."""
 
     nhi_number: str | None = None
+
+    @field_validator("nhi_number")
+    @classmethod
+    def validate_nhi(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip().upper()
+        if not _NHI_RE.match(v):
+            raise ValueError(
+                "NHI must be 3 letters (A–Z excl. I/O) + 4 digits (legacy, e.g. ZAA0001) "
+                "or 3 letters + 2 digits + 2 letters (new format, e.g. ZZZ00AB)"
+            )
+        return v
     family_name: str | None = None
     given_names: str | None = None
     date_of_birth: ISODate | None = None

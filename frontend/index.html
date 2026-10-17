@@ -411,8 +411,8 @@ pre.fhir-json {
       <div class="collapsible-body">
         <div class="form-grid">
           <div class="form-group">
-            <label>NHI Number <span title="National Health Index">ℹ</span></label>
-            <input type="text" id="nhi_number" placeholder="ZZZ0016" maxlength="7" title="NHI format: 3 letters + 3 digits + 1 check digit (e.g. ZZZ0016)" style="font-family:monospace;text-transform:uppercase;"/>
+            <label>NHI Number <span style="color:var(--danger)">*</span> <span title="National Health Index — required to link encounters to a patient">ℹ</span></label>
+            <input type="text" id="nhi_number" placeholder="e.g. ZAA0001" maxlength="7" required pattern="[A-HJ-NP-Za-hj-np-z]{3}([0-9]{4}|[0-9]{2}[A-HJ-NP-Za-hj-np-z]{2})" title="NZ NHI: 3 letters (A–Z excl. I/O) + 4 digits (legacy, e.g. ZAA0001) or + 2 digits + 2 letters (new format, e.g. ZZZ00AB)" style="font-family:monospace;text-transform:uppercase;" autocomplete="off"/>
           </div>
           <div class="form-group">
             <label>Family Name <span class="req">*</span></label>
@@ -1791,8 +1791,8 @@ async function submitRecord() {
   if (plan) clinical_notes.push({ section:'assessment and plan', text: plan });
   if (other) clinical_notes.push({ section:'other', text: other });
 
-  // NHI force upper
-  const nhi = document.getElementById('nhi_number').value.trim().toUpperCase() || null;
+  const nhi = document.getElementById('nhi_number').value.trim().toUpperCase();
+  if (!nhi) { alert('NHI number is required.'); return; }
 
   const payload = {
     nhi_number: nhi,
