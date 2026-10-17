@@ -20,9 +20,13 @@ MissingCode = Literal[
 MISSING_CODES: frozenset[str] = frozenset(get_args(MissingCode))
 
 
-def _validate_numeric_or_missing(v: object) -> object:
-    if v is None or isinstance(v, (int, float)):
-        return v
+def _validate_numeric_or_missing(v: object) -> float | str | None:
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        raise ValueError(f"Expected a number or missing code, got {v!r}")
+    if isinstance(v, (int, float)):
+        return float(v)
     if isinstance(v, str) and v in MISSING_CODES:
         return v
     raise ValueError(f"Expected a number or missing code, got {v!r}")
@@ -38,11 +42,21 @@ _NHI_RE = re.compile(r"^[A-HJ-NP-Z]{3}([0-9]{4}|[0-9]{2}[A-HJ-NP-Z]{2})$")
 _ISO_DATE_RE = re.compile(r"^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$")
 
 
-def _validate_iso_date(v: object) -> object:
+def _validate_iso_date(v: object) -> str | None:
     if v is None:
-        return v  # let the field's own None/optional handling take over
+        return None
     if not isinstance(v, str) or not _ISO_DATE_RE.match(v):
         raise ValueError(f"Expected ISO date YYYY-MM-DD, got {v!r}")
+    return v
+
+
+def _validate_nhi(v: str) -> str:
+    v = v.strip().upper()
+    if not _NHI_RE.match(v):
+        raise ValueError(
+            "NHI must be 3 letters (A–Z excl. I/O) + 4 digits (legacy, e.g. ZAA0001) "
+            "or 3 letters + 2 digits + 2 letters (new format, e.g. ZZZ00AB)"
+        )
     return v
 
 
@@ -181,20 +195,14 @@ class PatientRecord(BaseModel):
     @classmethod
     def validate_nhi(cls, v: str | None) -> str | None:
         if v is None:
-            return v
-        v = v.strip().upper()
-        if not _NHI_RE.match(v):
-            raise ValueError(
-                "NHI must be 3 letters (A–Z excl. I/O) + 4 digits (legacy, e.g. ZAA0001) "
-                "or 3 letters + 2 digits + 2 letters (new format, e.g. ZZZ00AB)"
-            )
-        return v
+            return None
+        return _validate_nhi(v)
 
     @model_validator(mode="after")
     def check_demographics_or_patient_id(self) -> "PatientRecord":
         if self.patient_id is None:
             missing = [f for f in ("nhi_number", "family_name", "given_names", "date_of_birth", "sex")
-                       if not getattr(self, f, None)]
+                       if getattr(self, f, None) is None]
             if missing:
                 raise ValueError(
                     f"Fields required when patient_id is not provided: {', '.join(missing)}"
@@ -255,14 +263,8 @@ class PatientRecordUpdate(BaseModel):
     @classmethod
     def validate_nhi(cls, v: str | None) -> str | None:
         if v is None:
-            return v
-        v = v.strip().upper()
-        if not _NHI_RE.match(v):
-            raise ValueError(
-                "NHI must be 3 letters (A–Z excl. I/O) + 4 digits (legacy, e.g. ZAA0001) "
-                "or 3 letters + 2 digits + 2 letters (new format, e.g. ZZZ00AB)"
-            )
-        return v
+            return None
+        return _validate_nhi(v)
     family_name: str | None = None
     given_names: str | None = None
     date_of_birth: ISODate | None = None
@@ -317,13 +319,7 @@ class PatientCreate(BaseModel):
     @field_validator("nhi_number")
     @classmethod
     def validate_nhi(cls, v: str) -> str:
-        v = v.strip().upper()
-        if not _NHI_RE.match(v):
-            raise ValueError(
-                "NHI must be 3 letters (A–Z excl. I/O) + 4 digits (legacy, e.g. ZAA0001) "
-                "or 3 letters + 2 digits + 2 letters (new format, e.g. ZZZ00AB)"
-            )
-        return v
+        return _validate_nhi(v)
 
 
 class PatientUpdate(BaseModel):
@@ -348,11 +344,5 @@ class PatientUpdate(BaseModel):
     @classmethod
     def validate_nhi(cls, v: str | None) -> str | None:
         if v is None:
-            return v
-        v = v.strip().upper()
-        if not _NHI_RE.match(v):
-            raise ValueError(
-                "NHI must be 3 letters (A–Z excl. I/O) + 4 digits (legacy, e.g. ZAA0001) "
-                "or 3 letters + 2 digits + 2 letters (new format, e.g. ZZZ00AB)"
-            )
-        return v
+            return None
+        return _validate_nhi(v)

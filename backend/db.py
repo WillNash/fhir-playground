@@ -21,6 +21,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from collections.abc import Iterable
 from typing import Any, Generator, TypedDict
 
 from . import data_dictionary as _dd
@@ -335,7 +336,7 @@ def init_db() -> None:
 # ---------------------------------------------------------------------------
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
 def _coerce_value(dotted_key: str, raw: str | None) -> Any:
@@ -359,7 +360,7 @@ def _coerce_value(dotted_key: str, raw: str | None) -> Any:
     return raw
 
 
-def _flatten_record(record_dict: dict[str, Any]):
+def _flatten_record(record_dict: dict[str, Any]) -> Generator[tuple[str, str | None, int], None, None]:
     """Yield (field_name, value_str, instance) for all storable fields.
 
     For non-repeating fields, instance=0 (not NULL) to ensure ON CONFLICT upsert
@@ -413,9 +414,9 @@ def _flatten_record(record_dict: dict[str, Any]):
 
 
 def _assemble_record(
-    patient_row: sqlite3.Row,
-    encounter_row: sqlite3.Row,
-    eav_rows: list[sqlite3.Row],
+    patient_row: sqlite3.Row | dict[str, Any],
+    encounter_row: sqlite3.Row | dict[str, Any],
+    eav_rows: list[sqlite3.Row | dict[str, Any]],
 ) -> dict[str, Any]:
     """Reconstruct the nested record dict from table rows + EAV rows."""
     pr = dict(patient_row)
@@ -460,8 +461,11 @@ def _assemble_record(
         "clinical_notes":    [],
     }
 
-    # Patient extended demographics take precedence over EAV defaults.
-    # For old records these columns are NULL so EAV fallback still applies.
+    # For encounter-only records, patient demographic EAV rows are absent, so
+    # patient-column reads here are the sole source of those values. For NHI-path
+    # records both sources hold the same value; EAV overwrites these below.
+    # For old records (pre-column migration), columns are NULL so this is a no-op
+    # and the EAV loop below provides the values.
     for col in ("gender_identity", "sex_at_birth", "phone", "email",
                 "gp_name", "gp_practice", "pho"):
         val = pr.get(col)
@@ -536,7 +540,7 @@ def _assemble_record(
     return result
 
 
-def _upsert_eav(conn: sqlite3.Connection, record_id: str, triples) -> None:
+def _upsert_eav(conn: sqlite3.Connection, record_id: str, triples: Iterable[tuple[str, str | None, int]]) -> None:
     """Write EAV rows using ON CONFLICT DO UPDATE (never INSERT OR REPLACE)."""
     for field_name, value, instance in triples:
         conn.execute(
@@ -898,14 +902,6 @@ def list_records(
         if not row:
             continue
 
-        class _FakeRow(dict):
-            def __getitem__(self, k):
-                return super().__getitem__(k)
-            def __contains__(self, k):
-                return super().__contains__(k)
-            def get(self, k, default=None):
-                return super().get(k, default)
-
         d = dict(row)
         p_row_d = {
             "patient_id":      d["patient_id"],
@@ -943,14 +939,7 @@ def list_records(
             "updated_at":        d.get("updated_at"),
         }
 
-        class DictRow(dict):
-            def keys(self):
-                return super().keys()
-
-        p_fake = DictRow(p_row_d)
-        e_fake = DictRow(e_row_d)
-
-        results.append(_assemble_record(p_fake, e_fake, eav_map.get(rid, [])))
+        results.append(_assemble_record(p_row_d, e_row_d, eav_map.get(rid, [])))
 
     return results
 
@@ -1086,7 +1075,8 @@ def create_patient(patient_dict: dict[str, Any]) -> dict[str, Any]:
         )
         _audit(conn, "patient_add", record_id=patient_id, description="Patient created")
         result = _patient_with_counts_query(conn, patient_id)
-    return result  # type: ignore[return-value]
+    assert result is not None, "Patient was just inserted; None is impossible here"
+    return result
 
 
 def get_patient(patient_id: str) -> dict[str, Any] | None:

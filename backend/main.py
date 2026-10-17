@@ -115,7 +115,10 @@ app.add_middleware(
 
 @app.post("/api/records", status_code=201)
 async def create_patient_record(record: PatientRecord) -> dict[str, Any]:
-    return create_record(record.model_dump())
+    try:
+        return create_record(record.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @app.get("/api/records")
@@ -370,12 +373,12 @@ async def get_record_audit(record_id: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 @app.post("/api/patients", status_code=201)
-async def create_patient_record(patient: PatientCreate) -> dict[str, Any]:
+async def create_patient_handler(patient: PatientCreate) -> dict[str, Any]:
     return create_patient(patient.model_dump())
 
 
 @app.get("/api/patients/{patient_id}")
-async def get_patient_record(patient_id: str) -> dict[str, Any]:
+async def get_patient_handler(patient_id: str) -> dict[str, Any]:
     p = get_patient(patient_id)
     if not p:
         raise HTTPException(status_code=404, detail="Patient not found")
@@ -383,7 +386,7 @@ async def get_patient_record(patient_id: str) -> dict[str, Any]:
 
 
 @app.put("/api/patients/{patient_id}")
-async def update_patient_record(patient_id: str, updates: PatientUpdate) -> dict[str, Any]:
+async def update_patient_handler(patient_id: str, updates: PatientUpdate) -> dict[str, Any]:
     data = updates.model_dump(exclude_unset=True)
     updated = update_patient(patient_id, data)
     if not updated:
@@ -392,7 +395,7 @@ async def update_patient_record(patient_id: str, updates: PatientUpdate) -> dict
 
 
 @app.delete("/api/patients/{patient_id}")
-async def delete_patient_record(patient_id: str) -> Response:
+async def delete_patient_handler(patient_id: str) -> Response:
     if not delete_patient(patient_id):
         raise HTTPException(status_code=404, detail="Patient not found")
     return Response(status_code=204)
