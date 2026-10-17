@@ -2347,7 +2347,7 @@ async function loadRecords() {
     // Patient view
     const table = document.getElementById('records-table');
     const thead = table.querySelector('thead tr');
-    thead.innerHTML = '<th>NHI</th><th>Patient</th><th>DOB</th><th>Sex</th><th>Encounters</th><th>Last Visit</th><th>Actions</th>';
+    thead.innerHTML = '<th>NHI</th><th>Patient</th><th>DOB</th><th>Sex</th><th>Encounters</th><th>Last Visit</th><th>FHIR</th><th>Actions</th>';
 
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;"><span class="spinner"></span></td></tr>';
     try {
@@ -2356,7 +2356,7 @@ async function loadRecords() {
       if (fam) url += `&family_name=${encodeURIComponent(fam)}`;
       const patients = await apiGet(url);
       if (!patients.length) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">No patients found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">No patients found</td></tr>';
         return;
       }
       tbody.innerHTML = '';
@@ -2370,6 +2370,9 @@ async function loadRecords() {
           <td>${p.sex}</td>
           <td>${p.encounter_count}</td>
           <td>${p.last_encounter_date || '—'}</td>
+          <td>
+            <button class="btn btn-fhir btn-sm" onclick="convertPatient('${p.patient_id}', this)">⚡ FHIR</button>
+          </td>
           <td style="white-space:nowrap;">
             <button class="btn btn-info btn-sm" onclick="openViewDemographicsModal('${p.patient_id}')">Demographics</button>
             <button class="btn btn-primary btn-sm" onclick="openAddEncounterModal('${p.patient_id}','${p.nhi_number || ''}','${nameEsc}')">Add Encounter</button>
@@ -2380,7 +2383,7 @@ async function loadRecords() {
         tbody.appendChild(tr);
       });
     } catch(e) {
-      tbody.innerHTML = `<tr><td colspan="7" style="color:var(--danger);padding:16px;">Error: ${e.message}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" style="color:var(--danger);padding:16px;">Error: ${e.message}</td></tr>`;
     }
     return;
   }
@@ -2455,6 +2458,42 @@ async function convertRecord(recordId, btn) {
       formatFhirPanel(result.bundle) + hapiSection,
     );
     await loadRecords();
+    await loadStats();
+    refreshHapiStatus();
+  } catch(e) {
+    alert('FHIR conversion error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ FHIR';
+  }
+}
+
+async function convertPatient(patientId, btn) {
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const result = await apiPost(`/api/patients/${patientId}/convert`, {});
+
+    const hapiOk  = result.hapi && result.hapi.status === 'ok';
+    const hapiPid = result.hapi && result.hapi.patient_id;
+
+    const hapiSection = hapiOk
+      ? `<div style="margin-top:16px;padding:12px 16px;background:var(--fhir-light);border-radius:8px;border:1px solid #f6d5bd;">
+           <div style="font-weight:700;font-size:13px;color:var(--fhir-orange);margin-bottom:6px;">✓ PUT to HAPI FHIR Server</div>
+           <div style="font-size:12px;color:var(--muted);">Patient ID in HAPI: <code>${hapiPid||'—'}</code></div>
+           <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+             ${hapiPid ? `<button class="btn btn-fhir btn-sm" onclick="showPage('page-fhir');switchFhirTab('hapi');document.getElementById('hapi-everything-id').value='${hapiPid}';hapiEverything('${hapiPid}')">$everything ↗</button>` : ''}
+             <button class="btn btn-secondary btn-sm" onclick="showPage('page-fhir');switchFhirTab('hapi')">Open HAPI tab ↗</button>
+           </div>
+         </div>`
+      : `<div style="margin-top:16px;padding:12px 16px;background:#FFF7ED;border-radius:8px;border:1px solid #fed7aa;font-size:12px;color:var(--muted);">
+           HAPI offline — resource saved locally only. Start HAPI with <code>docker compose up -d</code> then re-convert.
+         </div>`;
+
+    showDetailPanel(
+      `FHIR Patient — ${result.resource_id}`,
+      formatFhirPanel(result.resource) + hapiSection,
+    );
     await loadStats();
     refreshHapiStatus();
   } catch(e) {
@@ -2646,10 +2685,11 @@ async function loadAndShowFhir(resourceId) {
   }
 }
 
-function formatFhirPanel(bundle) {
+function formatFhirPanel(resource) {
+  const rtype = resource.resourceType || 'Resource';
   return `<div class="fhir-panel" style="border-radius:8px;overflow:hidden;">
-    <div class="fhir-panel-header"><span class="type-badge">Bundle</span> ${bundle.id}</div>
-    <pre class="fhir-json">${syntaxHighlight(JSON.stringify(bundle, null, 2))}</pre>
+    <div class="fhir-panel-header"><span class="type-badge">${rtype}</span> ${resource.id}</div>
+    <pre class="fhir-json">${syntaxHighlight(JSON.stringify(resource, null, 2))}</pre>
   </div>`;
 }
 

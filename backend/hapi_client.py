@@ -64,6 +64,13 @@ async def post_bundle(bundle: dict[str, object]) -> dict[str, object]:
     return response.json()  # type: ignore[no-any-return]  # external JSON
 
 
+async def put_resource(resource_type: str, resource_id: str, resource: dict[str, object]) -> dict[str, object]:
+    """PUT a single FHIR resource by type and logical ID. Returns the stored resource."""
+    response = await _client().put(f"/{resource_type}/{resource_id}", json=resource, timeout=30.0)
+    response.raise_for_status()
+    return response.json()  # type: ignore[no-any-return]  # external JSON
+
+
 async def get_resource(resource_type: str, resource_id: str) -> dict[str, object]:
     """Read a single FHIR resource by type and logical ID."""
     response = await _client().get(f"/{resource_type}/{resource_id}", timeout=15.0)

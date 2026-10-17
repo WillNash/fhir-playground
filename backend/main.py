@@ -41,7 +41,7 @@ import csv
 import io
 
 from . import hapi_client
-from .converter import clinical_record_to_fhir_bundle, get_patient_id_from_bundle
+from .converter import build_patient, clinical_record_to_fhir_bundle, get_patient_id_from_bundle
 from .data_dictionary import DATA_DICTIONARY, EVENTS, MISSING_DATA_CODES
 from .db import (
     count_records,
@@ -198,6 +198,15 @@ async def convert_to_fhir(record_id: str) -> dict[str, Any]:
     }
 
 
+async def _put_patient_to_hapi(resource: dict[str, Any]) -> dict[str, Any]:
+    """PUT a FHIR Patient resource directly to HAPI and return a summary dict. Never raises."""
+    try:
+        hapi_response = await hapi_client.put_resource("Patient", resource["id"], resource)
+    except Exception as exc:
+        return {"status": "unavailable", "detail": str(exc)}
+    return {"status": "ok", "patient_id": hapi_response.get("id")}
+
+
 async def _post_bundle_to_hapi(bundle: dict[str, Any]) -> dict[str, Any]:
     """POST a FHIR transaction bundle to HAPI and return a summary dict.
 
@@ -219,6 +228,25 @@ async def _post_bundle_to_hapi(bundle: dict[str, Any]) -> dict[str, Any]:
         "status": "ok",
         "patient_id": hapi_patient_id,
         "entry_count": len(hapi_response.get("entry", [])),
+    }
+
+
+@app.post("/api/patients/{patient_id}/convert")
+async def convert_patient_to_fhir(patient_id: str) -> dict[str, Any]:
+    """Convert a patient's demographics to a FHIR Patient resource, persist locally, and PUT to HAPI."""
+    patient = get_patient(patient_id)
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    resource: dict[str, Any] = build_patient(patient)
+    resource_id = save_resource(resource)
+    hapi_result = await _put_patient_to_hapi(resource)
+
+    return {
+        "resource_id": resource_id,
+        "fhir_patient_id": resource["id"],
+        "hapi": hapi_result,
+        "resource": resource,
     }
 
 
