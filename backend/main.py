@@ -45,14 +45,18 @@ from .converter import clinical_record_to_fhir_bundle, get_patient_id_from_bundl
 from .data_dictionary import DATA_DICTIONARY, EVENTS, MISSING_DATA_CODES
 from .db import (
     count_records,
+    create_patient,
     create_record,
+    delete_patient,
     delete_record,
     get_audit_log,
+    get_patient,
     get_record,
     init_db,
     list_patients,
     list_records,
     set_fhir_bundle_id,
+    update_patient,
     update_record,
 )
 from .fhir_store import (
@@ -63,7 +67,7 @@ from .fhir_store import (
     save_resource,
     search_resources,
 )
-from .models import PatientRecord, PatientRecordUpdate
+from .models import PatientCreate, PatientRecord, PatientRecordUpdate, PatientUpdate
 from .snomed import (
     ALCOHOL_STATUS,
     ALLERGENS,
@@ -364,6 +368,35 @@ async def get_record_audit(record_id: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Patients list
 # ---------------------------------------------------------------------------
+
+@app.post("/api/patients", status_code=201)
+async def create_patient_record(patient: PatientCreate) -> dict[str, Any]:
+    return create_patient(patient.model_dump())
+
+
+@app.get("/api/patients/{patient_id}")
+async def get_patient_record(patient_id: str) -> dict[str, Any]:
+    p = get_patient(patient_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return p
+
+
+@app.put("/api/patients/{patient_id}")
+async def update_patient_record(patient_id: str, updates: PatientUpdate) -> dict[str, Any]:
+    data = updates.model_dump(exclude_unset=True)
+    updated = update_patient(patient_id, data)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return updated
+
+
+@app.delete("/api/patients/{patient_id}")
+async def delete_patient_record(patient_id: str) -> Response:
+    if not delete_patient(patient_id):
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return Response(status_code=204)
+
 
 @app.get("/api/patients")
 async def list_all_patients(

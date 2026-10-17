@@ -262,6 +262,24 @@ pre.fhir-json {
 #dict-table { font-size:12px; }
 #dict-table td { padding:6px 10px; }
 #dict-table th { padding:8px 10px; }
+
+/* Modal */
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:300; }
+.modal-overlay.active { display:block; }
+.modal-box { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+             width:min(760px,96vw); max-height:90vh; background:white; border-radius:var(--radius);
+             box-shadow:var(--shadow-lg); z-index:400; flex-direction:column; }
+.modal-box.active { display:flex; }
+.modal-header { padding:14px 20px; background:var(--nz-dark); color:white; display:flex;
+                align-items:center; gap:12px; border-radius:var(--radius) var(--radius) 0 0; flex-shrink:0; }
+.modal-header h2 { font-size:15px; font-weight:700; flex:1; margin:0; }
+.modal-body { padding:20px; overflow-y:auto; flex:1; }
+.modal-footer { padding:12px 20px; border-top:1px solid var(--border); background:#FAFAFA;
+                border-radius:0 0 var(--radius) var(--radius); display:flex; gap:8px; align-items:center; flex-shrink:0; }
+.btn-info { background:#1B4F8A; color:white; border-color:#1B4F8A; }
+.btn-info:hover { background:#163F6E; }
+.patient-banner { background:#EBF4FF; border:1px solid #BFD9F5; border-radius:6px; padding:10px 14px;
+                  margin-bottom:16px; font-size:13px; }
 </style>
 </head>
 <body>
@@ -275,8 +293,8 @@ pre.fhir-json {
   </div>
   <nav class="header-nav">
     <button class="nav-btn active" onclick="showPage('page-home')">Dashboard</button>
-    <button class="nav-btn" onclick="showPage('page-form')">New Encounter</button>
     <button class="nav-btn" onclick="showPage('page-records'); loadRecords()">Patient Records</button>
+    <button class="nav-btn" onclick="showPage('page-form')">Quick Entry</button>
     <button class="nav-btn" onclick="showPage('page-fhir'); loadFhirIndex()">FHIR Store</button>
     <button class="nav-btn" onclick="showPage('page-dict'); loadDataDictionary()">Data Dict</button>
     <span id="hapi-nav-badge" style="font-size:11px;padding:2px 7px;border-radius:10px;background:rgba(255,255,255,.15);color:rgba(255,255,255,.7);cursor:default;" title="HAPI FHIR Server">HAPI ···</span>
@@ -310,8 +328,8 @@ pre.fhir-json {
         <div style="font-size:36px;font-weight:800;color:var(--nz-teal);" id="stat-records">—</div>
         <div style="color:var(--muted);margin-top:4px;">Patient encounter records stored</div>
         <div style="margin-top:16px;">
-          <button class="btn btn-primary" onclick="showPage('page-form')">New Encounter</button>
-          <button class="btn btn-secondary" onclick="showPage('page-records');loadRecords()">View All</button>
+          <button class="btn btn-primary" onclick="showPage('page-records');loadRecords();openAddPatientModal()">Add Patient</button>
+          <button class="btn btn-secondary" onclick="showPage('page-records');loadRecords()">View Patients</button>
         </div>
       </div>
     </div>
@@ -921,16 +939,16 @@ pre.fhir-json {
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
     <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">Patient Records</h1>
     <div style="display:flex;gap:8px;margin-left:auto;">
-      <button id="view-enc-btn" class="btn btn-secondary btn-sm" onclick="switchRecordView('encounter')">Encounter View</button>
       <button id="view-pat-btn" class="btn btn-secondary btn-sm" onclick="switchRecordView('patient')">Patient View</button>
+      <button id="view-enc-btn" class="btn btn-secondary btn-sm" onclick="switchRecordView('encounter')">Encounter View</button>
     </div>
   </div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;align-items:center;">
     <input type="text" id="search-family" placeholder="Search by surname..." style="max-width:200px;"/>
     <input type="text" id="search-nhi" placeholder="NHI number..." style="max-width:140px;font-family:monospace;"/>
-    <input type="date" id="search-date" style="max-width:160px;"/>
+    <input type="date" id="search-date" style="max-width:160px;" class="enc-view-only" title="Filter by encounter date (Encounter View only)"/>
     <button class="btn btn-secondary btn-sm" onclick="loadRecords()">Search</button>
-    <button class="btn btn-primary btn-sm" onclick="showPage('page-form')">+ New Encounter</button>
+    <button class="btn btn-primary btn-sm" onclick="openAddPatientModal()">+ Add Patient</button>
   </div>
 
   <div class="card">
@@ -941,15 +959,14 @@ pre.fhir-json {
             <th>NHI</th>
             <th>Patient</th>
             <th>DOB</th>
-            <th>Date</th>
-            <th>Type</th>
-            <th>Complaint</th>
-            <th>FHIR</th>
+            <th>Sex</th>
+            <th>Encounters</th>
+            <th>Last Visit</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody id="records-tbody">
-          <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
+          <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
         </tbody>
       </table>
     </div>
@@ -1137,6 +1154,18 @@ pre.fhir-json {
 
 </div><!-- /app-shell -->
 
+<!-- ===== MODAL ===== -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal()"></div>
+<div class="modal-box" id="modal-box">
+  <div class="modal-header">
+    <h2 id="modal-title">Modal</h2>
+    <button class="btn btn-secondary btn-sm" onclick="closeModal()"
+      style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:white;">✕ Close</button>
+  </div>
+  <div class="modal-body" id="modal-body"></div>
+  <div class="modal-footer" id="modal-footer"></div>
+</div>
+
 <script>
 // ============================================================
 // State
@@ -1161,7 +1190,11 @@ const MISSING_CODE_LABELS = { NI:'No information', INV:'Invalid', UNK:'Unknown',
 let BRANCHING_LOGIC = {};
 
 // Records view mode
-let recordViewMode = 'encounter';
+let recordViewMode = 'patient';
+let currentEncounterPatientId = null;
+let modalEncounterState = { conditions:[], medications:[], allergies:[], lab_results:[], immunizations:[] };
+let modalPatientState = { ethnicity_codes:[] };
+let modalMissingCodeState = {};
 
 // ============================================================
 // Navigation
@@ -1170,10 +1203,28 @@ function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-  const map = { 'page-home':'Dashboard', 'page-form':'New Encounter', 'page-records':'Patient Records', 'page-fhir':'FHIR Store', 'page-dict':'Data Dict' };
+  const map = { 'page-home':'Dashboard', 'page-form':'Quick Entry', 'page-records':'Patient Records', 'page-fhir':'FHIR Store', 'page-dict':'Data Dict' };
   document.querySelectorAll('.nav-btn').forEach(b => { if(b.textContent.trim() === map[id]) b.classList.add('active'); });
   loadStats();
   if (id === 'page-dict') loadDataDictionary();
+}
+
+// ============================================================
+// Modal infrastructure
+// ============================================================
+function openModal(title, bodyHTML, footerHTML) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML = bodyHTML;
+  document.getElementById('modal-footer').innerHTML = footerHTML;
+  document.getElementById('modal-overlay').classList.add('active');
+  document.getElementById('modal-box').classList.add('active');
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('active');
+  document.getElementById('modal-box').classList.remove('active');
+  document.getElementById('modal-body').innerHTML = '';
+  document.getElementById('modal-footer').innerHTML = '';
+  modalMissingCodeState = {};
 }
 
 // ============================================================
@@ -1598,6 +1649,410 @@ async function togglePatientTimeline(patientId, nhi, btn) {
 }
 
 // ============================================================
+// Patient CRUD helpers
+// ============================================================
+async function deletePatient(patientId) {
+  if (!confirm('Delete this patient and ALL their encounters? This cannot be undone.')) return;
+  try {
+    const r = await fetch(`/api/patients/${patientId}`, { method: 'DELETE' });
+    if (!r.ok && r.status !== 204) throw new Error(await r.text());
+    loadRecords();
+    showToast('Patient deleted.');
+  } catch(e) { alert('Delete failed: ' + e.message); }
+}
+
+function buildDemographicsFormHTML(patient) {
+  const p = patient || {};
+  const regions = (refData.regions || []).map(r =>
+    `<option value="${r}" ${p.address?.region===r?'selected':''}>${r}</option>`).join('');
+  const ethSelected = (p.ethnicity_codes || []);
+  const ethOptions = Object.entries(refData.ethnicity || {}).map(([code, label]) =>
+    `<button type="button" class="btn btn-secondary btn-sm m-eth-btn ${ethSelected.includes(code)?'active':''}"
+      style="font-size:11px;padding:2px 8px;margin:2px;" data-code="${code}" onclick="toggleModalEthnicity('${code}',this)">${label}</button>`
+  ).join('');
+  return `
+    <div class="form-grid">
+      <div class="form-group">
+        <label>NHI Number <span style="color:var(--danger)">*</span></label>
+        <input id="m-nhi_number" type="text" value="${p.nhi_number||''}" maxlength="7" required
+          placeholder="e.g. ZAA0001" style="font-family:monospace;text-transform:uppercase;"
+          pattern="[A-HJ-NP-Za-hj-np-z]{3}([0-9]{4}|[0-9]{2}[A-HJ-NP-Za-hj-np-z]{2})"/>
+      </div>
+      <div class="form-group">
+        <label>Family Name <span style="color:var(--danger)">*</span></label>
+        <input id="m-family_name" type="text" value="${p.family_name||''}" required/>
+      </div>
+      <div class="form-group">
+        <label>Given Names <span style="color:var(--danger)">*</span></label>
+        <input id="m-given_names" type="text" value="${p.given_names||''}" required/>
+      </div>
+      <div class="form-group">
+        <label>Date of Birth <span style="color:var(--danger)">*</span></label>
+        <input id="m-date_of_birth" type="date" value="${p.date_of_birth||''}" required/>
+      </div>
+      <div class="form-group">
+        <label>Sex <span style="color:var(--danger)">*</span></label>
+        <select id="m-sex" onchange="applyModalDemoBranching()">
+          <option value="">—</option>
+          ${['male','female','other','unknown'].map(s=>`<option value="${s}" ${p.sex===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div id="m-branch-gender" class="form-group" style="${p.sex==='other'?'':'display:none'}">
+        <label>Gender Identity</label>
+        <input id="m-gender_identity" type="text" value="${p.gender_identity||''}"/>
+      </div>
+      <div id="m-branch-sex-at-birth" class="form-group" style="${p.sex==='other'?'':'display:none'}">
+        <label>Sex at Birth</label>
+        <select id="m-sex_at_birth">
+          <option value="">—</option>
+          ${['male','female','other','unknown'].map(s=>`<option value="${s}" ${p.sex_at_birth===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-group" style="margin-top:8px;">
+      <label>Ethnicity (NZ)</label>
+      <div id="m-eth-container" style="margin-top:4px;">${ethOptions}</div>
+    </div>
+    <hr style="margin:16px 0;"/>
+    <h3 style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:12px;">Contact</h3>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Phone</label>
+        <input id="m-phone" type="text" value="${p.phone||''}"/>
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input id="m-email" type="email" value="${p.email||''}"/>
+      </div>
+      <div class="form-group">
+        <label>Street Address</label>
+        <input id="m-address_street" type="text" value="${p.address?.street||''}"/>
+      </div>
+      <div class="form-group">
+        <label>Suburb</label>
+        <input id="m-address_suburb" type="text" value="${p.address?.suburb||''}"/>
+      </div>
+      <div class="form-group">
+        <label>City</label>
+        <input id="m-address_city" type="text" value="${p.address?.city||''}"/>
+      </div>
+      <div class="form-group">
+        <label>Postcode</label>
+        <input id="m-address_postcode" type="text" value="${p.address?.postcode||''}"/>
+      </div>
+      <div class="form-group">
+        <label>Region</label>
+        <select id="m-address_region"><option value="">—</option>${regions}</select>
+      </div>
+    </div>
+    <hr style="margin:16px 0;"/>
+    <h3 style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:12px;">GP / PHO</h3>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>GP Name</label>
+        <input id="m-gp_name" type="text" value="${p.gp_name||''}"/>
+      </div>
+      <div class="form-group">
+        <label>GP Practice</label>
+        <input id="m-gp_practice" type="text" value="${p.gp_practice||''}"/>
+      </div>
+      <div class="form-group">
+        <label>PHO</label>
+        <input id="m-pho" type="text" value="${p.pho||''}"/>
+      </div>
+    </div>
+  `;
+}
+
+function toggleModalEthnicity(code, btn) {
+  btn.classList.toggle('active');
+  if (btn.classList.contains('active')) {
+    if (!modalPatientState.ethnicity_codes.includes(code)) modalPatientState.ethnicity_codes.push(code);
+  } else {
+    modalPatientState.ethnicity_codes = modalPatientState.ethnicity_codes.filter(c => c !== code);
+  }
+}
+
+function applyModalDemoBranching() {
+  const sex = document.getElementById('m-sex')?.value;
+  const show = sex === 'other';
+  const g = document.getElementById('m-branch-gender');
+  const s = document.getElementById('m-branch-sex-at-birth');
+  if (g) g.style.display = show ? '' : 'none';
+  if (s) s.style.display = show ? '' : 'none';
+}
+
+function readDemographicsFromModal() {
+  const g = v => { const el = document.getElementById(v); return el ? el.value.trim() : ''; };
+  return {
+    nhi_number:      g('m-nhi_number').toUpperCase(),
+    family_name:     g('m-family_name'),
+    given_names:     g('m-given_names'),
+    date_of_birth:   g('m-date_of_birth'),
+    sex:             g('m-sex'),
+    gender_identity: g('m-gender_identity') || null,
+    sex_at_birth:    g('m-sex_at_birth') || null,
+    ethnicity_codes: [...modalPatientState.ethnicity_codes],
+    address: {
+      street:   g('m-address_street') || null,
+      suburb:   g('m-address_suburb') || null,
+      city:     g('m-address_city') || null,
+      postcode: g('m-address_postcode') || null,
+      region:   g('m-address_region') || null,
+    },
+    phone:       g('m-phone') || null,
+    email:       g('m-email') || null,
+    gp_name:     g('m-gp_name') || null,
+    gp_practice: g('m-gp_practice') || null,
+    pho:         g('m-pho') || null,
+  };
+}
+
+function openAddPatientModal() {
+  modalPatientState = { ethnicity_codes: [] };
+  openModal(
+    'Add New Patient',
+    buildDemographicsFormHTML(null),
+    `<button class="btn btn-primary" onclick="submitAddPatient()">Save Patient</button>
+     <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+     <span id="m-error" style="color:var(--danger);font-size:13px;margin-left:8px;"></span>`
+  );
+}
+
+async function submitAddPatient() {
+  const data = readDemographicsFromModal();
+  const errEl = document.getElementById('m-error');
+  if (!data.nhi_number) { errEl.textContent = 'NHI is required.'; return; }
+  if (!data.family_name || !data.given_names) { errEl.textContent = 'Name is required.'; return; }
+  if (!data.date_of_birth) { errEl.textContent = 'Date of birth is required.'; return; }
+  if (!data.sex) { errEl.textContent = 'Sex is required.'; return; }
+  if (errEl) errEl.textContent = '';
+  try {
+    const r = await fetch('/api/patients', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
+    if (!r.ok) { const e = await r.json(); errEl.textContent = JSON.stringify(e.detail||e); return; }
+    closeModal();
+    loadRecords();
+    showToast('Patient registered.');
+  } catch(e) { errEl.textContent = e.message; }
+}
+
+async function openViewDemographicsModal(patientId) {
+  const p = await apiGet(`/api/patients/${patientId}`);
+  modalPatientState = { ethnicity_codes: [...(p.ethnicity_codes || [])] };
+  openModal(
+    `Demographics — ${p.family_name}, ${p.given_names}`,
+    buildDemographicsFormHTML(p),
+    `<button class="btn btn-primary" onclick="submitUpdatePatient('${patientId}')">Save Changes</button>
+     <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+     <span id="m-error" style="color:var(--danger);font-size:13px;margin-left:8px;"></span>`
+  );
+}
+
+async function submitUpdatePatient(patientId) {
+  const data = readDemographicsFromModal();
+  const errEl = document.getElementById('m-error');
+  if (errEl) errEl.textContent = '';
+  try {
+    const r = await fetch(`/api/patients/${patientId}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
+    if (!r.ok) { const e = await r.json(); if(errEl) errEl.textContent = JSON.stringify(e.detail||e); return; }
+    closeModal();
+    loadRecords();
+    showToast('Demographics updated.');
+  } catch(e) { if(errEl) errEl.textContent = e.message; }
+}
+
+// ============================================================
+// Add Encounter modal
+// ============================================================
+function buildEncounterFormHTML(nhi, name) {
+  const evOptions = (refData.events||[]).map(ev =>
+    `<option value="${ev.unique_event_name}">${ev.event_label}</option>`).join('');
+  return `
+    <div class="patient-banner">
+      Recording encounter for: <strong>${name}</strong> — <span class="nhi-pill">${nhi}</span>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Event</label>
+        <select id="me-event">${evOptions}</select>
+      </div>
+      <div class="form-group">
+        <label>Encounter Date <span style="color:var(--danger)">*</span></label>
+        <input id="me-encounter_date" type="date" required/>
+      </div>
+      <div class="form-group">
+        <label>Encounter Type</label>
+        <select id="me-encounter_type">
+          ${['ambulatory','inpatient','emergency','telehealth'].map(t=>`<option value="${t}">${t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Presenting Complaint</label>
+        <input id="me-presenting_complaint" type="text"/>
+      </div>
+      <div class="form-group">
+        <label>Clinician Name</label>
+        <input id="me-clinician_name" type="text"/>
+      </div>
+      <div class="form-group">
+        <label>Clinician Role</label>
+        <input id="me-clinician_role" type="text"/>
+      </div>
+    </div>
+    <hr style="margin:12px 0;"/>
+    <h3 style="font-size:13px;font-weight:700;margin-bottom:8px;">Vitals</h3>
+    <div class="form-grid">
+      <div class="form-group"><label>Systolic BP (mmHg)</label><input id="me-v_sbp" type="number" step="any"/></div>
+      <div class="form-group"><label>Diastolic BP (mmHg)</label><input id="me-v_dbp" type="number" step="any"/></div>
+      <div class="form-group"><label>Heart Rate (bpm)</label><input id="me-v_hr" type="number" step="any"/></div>
+      <div class="form-group"><label>Resp Rate</label><input id="me-v_rr" type="number" step="any"/></div>
+      <div class="form-group"><label>Temperature (°C)</label><input id="me-v_temp" type="number" step="any"/></div>
+      <div class="form-group"><label>SpO₂ (%)</label><input id="me-v_spo2" type="number" step="any"/></div>
+      <div class="form-group"><label>Weight (kg)</label><input id="me-v_weight" type="number" step="any" oninput="calcModalBMI()"/></div>
+      <div class="form-group"><label>Height (cm)</label><input id="me-v_height" type="number" step="any" oninput="calcModalBMI()"/></div>
+      <div class="form-group"><label>BMI</label><input id="me-v_bmi" type="number" step="any" readonly style="background:#f8fafc;"/></div>
+    </div>
+    <hr style="margin:12px 0;"/>
+    <h3 style="font-size:13px;font-weight:700;margin-bottom:8px;">Conditions</h3>
+    <div id="me-cond-list"></div>
+    <div class="form-grid" style="margin-top:8px;">
+      <div class="form-group"><label>SNOMED Code</label>
+        <select id="me-cond_code"><option value="">— Select —</option>
+          ${Object.entries(refData.conditions||{}).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}
+        </select></div>
+      <div class="form-group"><label>Status</label>
+        <select id="me-cond_status"><option value="active">active</option><option value="resolved">resolved</option><option value="inactive">inactive</option></select></div>
+      <div class="form-group"><label>Onset Date</label><input id="me-cond_onset" type="date"/></div>
+    </div>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="addModalCondition()">+ Add Condition</button>
+    <hr style="margin:12px 0;"/>
+    <h3 style="font-size:13px;font-weight:700;margin-bottom:8px;">Social History</h3>
+    <div class="form-grid">
+      <div class="form-group"><label>Smoking Status</label>
+        <select id="me-smoking_code" onchange="applyModalEncounterBranching()"><option value="">—</option>
+          ${Object.entries(refData.smoking||{}).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}
+        </select></div>
+      <div id="me-branch-pack" class="form-group" style="display:none;"><label>Pack Years</label><input id="me-pack_years" type="number" step="any"/></div>
+      <div class="form-group"><label>Alcohol Status</label>
+        <select id="me-alcohol_code" onchange="applyModalEncounterBranching()"><option value="">—</option>
+          ${Object.entries(refData.alcohol||{}).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}
+        </select></div>
+      <div id="me-branch-alcohol" class="form-group" style="display:none;"><label>Alcohol Units/Week</label><input id="me-alcohol_units" type="number" step="any"/></div>
+      <div class="form-group"><label>Occupation</label><input id="me-occupation" type="text"/></div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;padding-top:20px;">
+        <input id="me-lives_alone" type="checkbox"/> <label style="margin:0;">Lives alone</label>
+      </div>
+    </div>
+  `;
+}
+
+function calcModalBMI() {
+  const w = parseFloat(document.getElementById('me-v_weight')?.value);
+  const h = parseFloat(document.getElementById('me-v_height')?.value);
+  const bmiEl = document.getElementById('me-v_bmi');
+  if (bmiEl && w > 0 && h > 0) bmiEl.value = (w / ((h/100)**2)).toFixed(1);
+}
+
+function applyModalEncounterBranching() {
+  const smoking = document.getElementById('me-smoking_code')?.value;
+  const alcohol = document.getElementById('me-alcohol_code')?.value;
+  const nonSmoker = '266919005';
+  const nonDrinker = '228274009';
+  const packDiv = document.getElementById('me-branch-pack');
+  const alcDiv = document.getElementById('me-branch-alcohol');
+  if (packDiv) packDiv.style.display = (smoking && smoking !== nonSmoker) ? '' : 'none';
+  if (alcDiv)  alcDiv.style.display  = (alcohol && alcohol !== nonDrinker) ? '' : 'none';
+}
+
+function addModalCondition() {
+  const code = document.getElementById('me-cond_code')?.value;
+  const status = document.getElementById('me-cond_status')?.value || 'active';
+  const onset = document.getElementById('me-cond_onset')?.value || null;
+  if (!code) { alert('Select a condition code first.'); return; }
+  const display = refData.conditions[code] || code;
+  modalEncounterState.conditions.push({ snomed_code: code, display, status, onset_date: onset });
+  renderModalConditions();
+}
+
+function renderModalConditions() {
+  const el = document.getElementById('me-cond-list');
+  if (!el) return;
+  el.innerHTML = modalEncounterState.conditions.map((c,i) =>
+    `<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:12px;padding:4px 8px;background:#f8fafc;border-radius:4px;">
+      <span>${c.display} (${c.status})</span>
+      <button type="button" class="btn btn-danger btn-sm" style="padding:1px 6px;" onclick="modalEncounterState.conditions.splice(${i},1);renderModalConditions()">✕</button>
+    </div>`
+  ).join('');
+}
+
+function openAddEncounterModal(patientId, nhi, name) {
+  currentEncounterPatientId = patientId;
+  modalEncounterState = { conditions:[], medications:[], allergies:[], lab_results:[], immunizations:[] };
+  openModal(
+    'Add Encounter',
+    buildEncounterFormHTML(nhi, name),
+    `<button class="btn btn-primary" onclick="submitAddEncounter()">Save Encounter</button>
+     <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+     <span id="me-error" style="color:var(--danger);font-size:13px;margin-left:8px;"></span>`
+  );
+}
+
+async function submitAddEncounter() {
+  const errEl = document.getElementById('me-error');
+  const g = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const encDate = g('me-encounter_date');
+  if (!encDate) { if(errEl) errEl.textContent = 'Encounter date is required.'; return; }
+  if (errEl) errEl.textContent = '';
+
+  const smokingCode = g('me-smoking_code');
+  const alcoholCode = g('me-alcohol_code');
+  const livesAlone = document.getElementById('me-lives_alone')?.checked;
+
+  const payload = {
+    patient_id:          currentEncounterPatientId,
+    encounter_date:      encDate,
+    encounter_type:      g('me-encounter_type') || 'ambulatory',
+    redcap_event_name:   g('me-event') || null,
+    presenting_complaint:g('me-presenting_complaint') || null,
+    clinician_name:      g('me-clinician_name') || null,
+    clinician_role:      g('me-clinician_role') || null,
+    vitals: {
+      systolic_bp:      g('me-v_sbp') ? parseFloat(g('me-v_sbp')) : null,
+      diastolic_bp:     g('me-v_dbp') ? parseFloat(g('me-v_dbp')) : null,
+      heart_rate:       g('me-v_hr')  ? parseFloat(g('me-v_hr'))  : null,
+      respiratory_rate: g('me-v_rr')  ? parseFloat(g('me-v_rr'))  : null,
+      temperature:      g('me-v_temp')? parseFloat(g('me-v_temp')): null,
+      spo2:             g('me-v_spo2')? parseFloat(g('me-v_spo2')): null,
+      weight_kg:        g('me-v_weight')?parseFloat(g('me-v_weight')):null,
+      height_cm:        g('me-v_height')?parseFloat(g('me-v_height')):null,
+      bmi:              g('me-v_bmi') ? parseFloat(g('me-v_bmi')) : null,
+    },
+    conditions: modalEncounterState.conditions,
+    medications: [],
+    allergies: [],
+    lab_results: [],
+    immunizations: [],
+    social_history: smokingCode || alcoholCode ? {
+      smoking_status_code:    smokingCode || null,
+      smoking_status_display: smokingCode ? (refData.smoking[smokingCode] || null) : null,
+      pack_years:             g('me-pack_years') ? parseFloat(g('me-pack_years')) : null,
+      alcohol_status_code:    alcoholCode || null,
+      alcohol_units_per_week: g('me-alcohol_units') ? parseFloat(g('me-alcohol_units')) : null,
+      occupation:             g('me-occupation') || null,
+      lives_alone:            livesAlone,
+    } : null,
+  };
+
+  try {
+    const r = await fetch('/api/records', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    if (!r.ok) { const e = await r.json(); if(errEl) errEl.textContent = JSON.stringify(e.detail||e); return; }
+    closeModal();
+    loadRecords();
+    showToast('Encounter saved.');
+  } catch(e) { if(errEl) errEl.textContent = e.message; }
+}
+
+// ============================================================
 // Data dictionary
 // ============================================================
 async function loadDataDictionary() {
@@ -1907,6 +2362,7 @@ async function loadRecords() {
       tbody.innerHTML = '';
       patients.forEach(p => {
         const tr = document.createElement('tr');
+        const nameEsc = (p.family_name + ', ' + p.given_names).replace(/'/g, "\\'");
         tr.innerHTML = `
           <td>${p.nhi_number ? `<span class="nhi-pill">${p.nhi_number}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
           <td><strong>${p.family_name}</strong>, ${p.given_names}</td>
@@ -1914,8 +2370,11 @@ async function loadRecords() {
           <td>${p.sex}</td>
           <td>${p.encounter_count}</td>
           <td>${p.last_encounter_date || '—'}</td>
-          <td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-info btn-sm" onclick="openViewDemographicsModal('${p.patient_id}')">Demographics</button>
+            <button class="btn btn-primary btn-sm" onclick="openAddEncounterModal('${p.patient_id}','${p.nhi_number || ''}','${nameEsc}')">Add Encounter</button>
             <button class="btn btn-secondary btn-sm" onclick="togglePatientTimeline('${p.patient_id}', '${p.nhi_number || ''}', this)">Timeline</button>
+            <button class="btn btn-danger btn-sm" onclick="deletePatient('${p.patient_id}')">Del</button>
           </td>
         `;
         tbody.appendChild(tr);

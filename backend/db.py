@@ -111,14 +111,27 @@ def init_db() -> None:
     with _db_conn() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS patients (
-                patient_id    TEXT PRIMARY KEY,
-                nhi_number    TEXT NOT NULL UNIQUE,
-                family_name   TEXT NOT NULL,
-                given_names   TEXT NOT NULL,
-                date_of_birth TEXT NOT NULL,
-                sex           TEXT NOT NULL,
-                created_at    TEXT NOT NULL,
-                updated_at    TEXT NOT NULL
+                patient_id      TEXT PRIMARY KEY,
+                nhi_number      TEXT NOT NULL UNIQUE,
+                family_name     TEXT NOT NULL,
+                given_names     TEXT NOT NULL,
+                date_of_birth   TEXT NOT NULL,
+                sex             TEXT NOT NULL,
+                gender_identity TEXT,
+                sex_at_birth    TEXT,
+                ethnicity_codes TEXT,
+                address_street  TEXT,
+                address_suburb  TEXT,
+                address_city    TEXT,
+                address_postcode TEXT,
+                address_region  TEXT,
+                phone           TEXT,
+                email           TEXT,
+                gp_name         TEXT,
+                gp_practice     TEXT,
+                pho             TEXT,
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_patients_family ON patients(LOWER(family_name));
 
@@ -212,18 +225,33 @@ def init_db() -> None:
             conn.execute("PRAGMA foreign_keys=OFF")
             conn.execute("""
                 CREATE TABLE patients_v2 (
-                    patient_id    TEXT PRIMARY KEY,
-                    nhi_number    TEXT NOT NULL UNIQUE,
-                    family_name   TEXT NOT NULL,
-                    given_names   TEXT NOT NULL,
-                    date_of_birth TEXT NOT NULL,
-                    sex           TEXT NOT NULL,
-                    created_at    TEXT NOT NULL,
-                    updated_at    TEXT NOT NULL
+                    patient_id      TEXT PRIMARY KEY,
+                    nhi_number      TEXT NOT NULL UNIQUE,
+                    family_name     TEXT NOT NULL,
+                    given_names     TEXT NOT NULL,
+                    date_of_birth   TEXT NOT NULL,
+                    sex             TEXT NOT NULL,
+                    gender_identity TEXT,
+                    sex_at_birth    TEXT,
+                    ethnicity_codes TEXT,
+                    address_street  TEXT,
+                    address_suburb  TEXT,
+                    address_city    TEXT,
+                    address_postcode TEXT,
+                    address_region  TEXT,
+                    phone           TEXT,
+                    email           TEXT,
+                    gp_name         TEXT,
+                    gp_practice     TEXT,
+                    pho             TEXT,
+                    created_at      TEXT NOT NULL,
+                    updated_at      TEXT NOT NULL
                 )
             """)
             conn.execute("""
                 INSERT OR IGNORE INTO patients_v2
+                    (patient_id, nhi_number, family_name, given_names,
+                     date_of_birth, sex, created_at, updated_at)
                 SELECT patient_id, nhi_number, family_name, given_names,
                        date_of_birth, sex, created_at, updated_at
                 FROM patients WHERE nhi_number IS NOT NULL
@@ -234,6 +262,27 @@ def init_db() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_patients_family ON patients(LOWER(family_name))"
             )
             conn.execute("PRAGMA foreign_keys=ON")
+
+        # Migrate: add extended demographic columns to patients if not present
+        existing_cols = {c["name"] for c in conn.execute("PRAGMA table_info(patients)").fetchall()}
+        _new_patient_cols = [
+            ("gender_identity",  "TEXT"),
+            ("sex_at_birth",     "TEXT"),
+            ("ethnicity_codes",  "TEXT"),
+            ("address_street",   "TEXT"),
+            ("address_suburb",   "TEXT"),
+            ("address_city",     "TEXT"),
+            ("address_postcode", "TEXT"),
+            ("address_region",   "TEXT"),
+            ("phone",            "TEXT"),
+            ("email",            "TEXT"),
+            ("gp_name",          "TEXT"),
+            ("gp_practice",      "TEXT"),
+            ("pho",              "TEXT"),
+        ]
+        for col_name, col_type in _new_patient_cols:
+            if col_name not in existing_cols:
+                conn.execute(f"ALTER TABLE patients ADD COLUMN {col_name} {col_type}")
 
         # Seed arm
         conn.execute("INSERT OR IGNORE INTO arms (arm_num, name) VALUES (1, 'Arm 1')")
@@ -411,6 +460,25 @@ def _assemble_record(
         "clinical_notes":    [],
     }
 
+    # Patient extended demographics take precedence over EAV defaults.
+    # For old records these columns are NULL so EAV fallback still applies.
+    for col in ("gender_identity", "sex_at_birth", "phone", "email",
+                "gp_name", "gp_practice", "pho"):
+        val = pr.get(col)
+        if val is not None:
+            result[col] = val
+    if pr.get("ethnicity_codes"):
+        result["ethnicity_codes"] = [c for c in pr["ethnicity_codes"].split("|") if c]
+    addr_from_cols = {
+        "street":   pr.get("address_street"),
+        "suburb":   pr.get("address_suburb"),
+        "city":     pr.get("address_city"),
+        "postcode": pr.get("address_postcode"),
+        "region":   pr.get("address_region"),
+    }
+    if any(v is not None for v in addr_from_cols.values()):
+        result["address"] = addr_from_cols
+
     # Group repeating EAV rows by (instrument, instance)
     repeating_groups: dict[str, dict[int, dict[str, Any]]] = {
         k: {} for k in _REPEATING
@@ -506,7 +574,41 @@ def _lookup_event_id(conn: sqlite3.Connection, event_name: str | None) -> int | 
 # ---------------------------------------------------------------------------
 
 def create_record(record_dict: dict[str, Any]) -> dict[str, Any]:
-    now = _now()
+    now = _now()  # defined first — both the encounter-only and NHI-upsert paths use it
+
+    # Encounter-only path: patient already exists, referenced by patient_id
+    explicit_patient_id = record_dict.get("patient_id")
+    if explicit_patient_id:
+        with _db_conn() as conn:
+            if not conn.execute(
+                "SELECT 1 FROM patients WHERE patient_id=?", (explicit_patient_id,)
+            ).fetchone():
+                raise ValueError(f"Patient not found: {explicit_patient_id}")
+            patient_id: str = explicit_patient_id
+            event_name = record_dict.get("redcap_event_name") or "baseline_arm_1"
+            event_id = _lookup_event_id(conn, event_name)
+            if event_id is None:
+                baseline = conn.execute(
+                    "SELECT event_id FROM events WHERE unique_event_name='baseline_arm_1'"
+                ).fetchone()
+                event_id = baseline["event_id"] if baseline else None
+            record_id = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO encounters (record_id, patient_id, event_id, redcap_event_name, "
+                "encounter_date, encounter_type, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                (record_id, patient_id, event_id, event_name,
+                 record_dict["encounter_date"],
+                 record_dict.get("encounter_type", "ambulatory"),
+                 now, now),
+            )
+            _upsert_eav(conn, record_id, _flatten_record(record_dict))
+            _audit(conn, "record_add", record_id=record_id, description="Record created")
+            p_row = conn.execute("SELECT * FROM patients WHERE patient_id=?", (patient_id,)).fetchone()
+            e_row = conn.execute("SELECT * FROM encounters WHERE record_id=?", (record_id,)).fetchone()
+            eav_rows = conn.execute(
+                "SELECT field_name, value, instance FROM redcap_data WHERE record_id=?", (record_id,)
+            ).fetchall()
+        return _assemble_record(p_row, e_row, eav_rows)
 
     with _db_conn() as conn:
         # Patient deduplication by NHI — NHI is required so always present
@@ -655,17 +757,38 @@ def update_record(record_id: str, updates: dict[str, Any]) -> dict[str, Any] | N
              merged.get("redcap_event_name", existing.get("redcap_event_name")),
              now, record_id),
         )
-        # Update patient demographics if changed
+        # Update patient demographics if changed (core + extended columns)
         patient_id = existing["patient_id"]
+        addr = merged.get("address") or {}
+        if hasattr(addr, "model_dump"):
+            addr = addr.model_dump()
+        eth = merged.get("ethnicity_codes") or []
         conn.execute(
-            "UPDATE patients SET family_name=?, given_names=?, date_of_birth=?, "
-            "sex=?, nhi_number=?, updated_at=? WHERE patient_id=?",
-            (merged.get("family_name", existing["family_name"]),
-             merged.get("given_names", existing["given_names"]),
-             merged.get("date_of_birth", existing["date_of_birth"]),
-             merged.get("sex", existing["sex"]),
-             merged.get("nhi_number", existing.get("nhi_number")),
-             now, patient_id),
+            "UPDATE patients SET family_name=?, given_names=?, date_of_birth=?, sex=?, "
+            "nhi_number=?, gender_identity=?, sex_at_birth=?, ethnicity_codes=?, "
+            "address_street=?, address_suburb=?, address_city=?, address_postcode=?, address_region=?, "
+            "phone=?, email=?, gp_name=?, gp_practice=?, pho=?, updated_at=? WHERE patient_id=?",
+            (
+                merged.get("family_name", existing["family_name"]),
+                merged.get("given_names", existing["given_names"]),
+                merged.get("date_of_birth", existing["date_of_birth"]),
+                merged.get("sex", existing["sex"]),
+                merged.get("nhi_number", existing.get("nhi_number")),
+                merged.get("gender_identity"),
+                merged.get("sex_at_birth"),
+                "|".join(eth) if eth else None,
+                addr.get("street") if addr else None,
+                addr.get("suburb") if addr else None,
+                addr.get("city") if addr else None,
+                addr.get("postcode") if addr else None,
+                addr.get("region") if addr else None,
+                merged.get("phone"),
+                merged.get("email"),
+                merged.get("gp_name"),
+                merged.get("gp_practice"),
+                merged.get("pho"),
+                now, patient_id,
+            ),
         )
 
         p_row = conn.execute(
@@ -737,10 +860,17 @@ def list_records(
         record_ids = [r["record_id"] for r in enc_rows]
         placeholders = ",".join("?" * len(record_ids))
 
-        # Bulk fetch
+        # Bulk fetch — include extended patient demographic columns
         all_encs = conn.execute(
             f"SELECT e.*, p.patient_id as p_id, p.nhi_number, p.family_name, "
             f"p.given_names, p.date_of_birth, p.sex, "
+            f"p.gender_identity as p_gender_identity, p.sex_at_birth as p_sex_at_birth, "
+            f"p.ethnicity_codes as p_ethnicity_codes, "
+            f"p.address_street as p_address_street, p.address_suburb as p_address_suburb, "
+            f"p.address_city as p_address_city, p.address_postcode as p_address_postcode, "
+            f"p.address_region as p_address_region, "
+            f"p.phone as p_phone, p.email as p_email, "
+            f"p.gp_name as p_gp_name, p.gp_practice as p_gp_practice, p.pho as p_pho, "
             f"p.created_at as p_created_at, p.updated_at as p_updated_at "
             f"FROM encounters e "
             f"JOIN patients p ON e.patient_id=p.patient_id "
@@ -778,14 +908,27 @@ def list_records(
 
         d = dict(row)
         p_row_d = {
-            "patient_id":   d["patient_id"],
-            "nhi_number":   d["nhi_number"],
-            "family_name":  d["family_name"],
-            "given_names":  d["given_names"],
-            "date_of_birth":d["date_of_birth"],
-            "sex":          d["sex"],
-            "created_at":   d.get("p_created_at", d.get("created_at")),
-            "updated_at":   d.get("p_updated_at", d.get("updated_at")),
+            "patient_id":      d["patient_id"],
+            "nhi_number":      d["nhi_number"],
+            "family_name":     d["family_name"],
+            "given_names":     d["given_names"],
+            "date_of_birth":   d["date_of_birth"],
+            "sex":             d["sex"],
+            "gender_identity": d.get("p_gender_identity"),
+            "sex_at_birth":    d.get("p_sex_at_birth"),
+            "ethnicity_codes": d.get("p_ethnicity_codes"),
+            "address_street":  d.get("p_address_street"),
+            "address_suburb":  d.get("p_address_suburb"),
+            "address_city":    d.get("p_address_city"),
+            "address_postcode":d.get("p_address_postcode"),
+            "address_region":  d.get("p_address_region"),
+            "phone":           d.get("p_phone"),
+            "email":           d.get("p_email"),
+            "gp_name":         d.get("p_gp_name"),
+            "gp_practice":     d.get("p_gp_practice"),
+            "pho":             d.get("p_pho"),
+            "created_at":      d.get("p_created_at", d.get("created_at")),
+            "updated_at":      d.get("p_updated_at", d.get("updated_at")),
         }
         e_row_d = {
             "record_id":         d["record_id"],
@@ -855,6 +998,161 @@ def list_patients(
     return [dict(r) for r in rows]
 
 
+def _patient_row_to_dict(row: dict[str, Any]) -> dict[str, Any]:
+    """Convert a flat patient DB row (with optional encounter_count) to a clean dict."""
+    codes_str = row.get("ethnicity_codes")
+    codes = [c for c in (codes_str or "").split("|") if c]
+    addr = {
+        "street":   row.get("address_street"),
+        "suburb":   row.get("address_suburb"),
+        "city":     row.get("address_city"),
+        "postcode": row.get("address_postcode"),
+        "region":   row.get("address_region"),
+    }
+    return {
+        "patient_id":          row["patient_id"],
+        "nhi_number":          row["nhi_number"],
+        "family_name":         row["family_name"],
+        "given_names":         row["given_names"],
+        "date_of_birth":       row["date_of_birth"],
+        "sex":                 row["sex"],
+        "gender_identity":     row.get("gender_identity"),
+        "sex_at_birth":        row.get("sex_at_birth"),
+        "ethnicity_codes":     codes,
+        "address":             addr if any(v is not None for v in addr.values()) else None,
+        "phone":               row.get("phone"),
+        "email":               row.get("email"),
+        "gp_name":             row.get("gp_name"),
+        "gp_practice":         row.get("gp_practice"),
+        "pho":                 row.get("pho"),
+        "encounter_count":     row.get("encounter_count", 0),
+        "last_encounter_date": row.get("last_encounter_date"),
+        "created_at":          row.get("created_at"),
+        "updated_at":          row.get("updated_at"),
+    }
+
+
+def _patient_with_counts_query(conn: sqlite3.Connection, patient_id: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT p.*, COUNT(e.record_id) as encounter_count, "
+        "MAX(e.encounter_date) as last_encounter_date "
+        "FROM patients p "
+        "LEFT JOIN encounters e ON e.patient_id=p.patient_id AND e.is_deleted=0 "
+        "WHERE p.patient_id=? GROUP BY p.patient_id",
+        (patient_id,),
+    ).fetchone()
+    return _patient_row_to_dict(dict(row)) if row else None
+
+
+def create_patient(patient_dict: dict[str, Any]) -> dict[str, Any]:
+    now = _now()
+    patient_id = str(uuid.uuid4())
+    ethnicity_codes = patient_dict.get("ethnicity_codes") or []
+    addr = patient_dict.get("address") or {}
+    if hasattr(addr, "model_dump"):
+        addr = addr.model_dump()
+
+    with _db_conn() as conn:
+        conn.execute(
+            """INSERT INTO patients (
+                patient_id, nhi_number, family_name, given_names, date_of_birth, sex,
+                gender_identity, sex_at_birth, ethnicity_codes,
+                address_street, address_suburb, address_city, address_postcode, address_region,
+                phone, email, gp_name, gp_practice, pho,
+                created_at, updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                patient_id,
+                patient_dict["nhi_number"],
+                patient_dict["family_name"],
+                patient_dict["given_names"],
+                patient_dict["date_of_birth"],
+                patient_dict["sex"],
+                patient_dict.get("gender_identity"),
+                patient_dict.get("sex_at_birth"),
+                "|".join(ethnicity_codes) if ethnicity_codes else None,
+                addr.get("street") if addr else None,
+                addr.get("suburb") if addr else None,
+                addr.get("city") if addr else None,
+                addr.get("postcode") if addr else None,
+                addr.get("region") if addr else None,
+                patient_dict.get("phone"),
+                patient_dict.get("email"),
+                patient_dict.get("gp_name"),
+                patient_dict.get("gp_practice"),
+                patient_dict.get("pho"),
+                now, now,
+            ),
+        )
+        _audit(conn, "patient_add", record_id=patient_id, description="Patient created")
+        result = _patient_with_counts_query(conn, patient_id)
+    return result  # type: ignore[return-value]
+
+
+def get_patient(patient_id: str) -> dict[str, Any] | None:
+    with _db_conn() as conn:
+        return _patient_with_counts_query(conn, patient_id)
+
+
+def update_patient(patient_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+    now = _now()
+    with _db_conn() as conn:
+        if not conn.execute(
+            "SELECT 1 FROM patients WHERE patient_id=?", (patient_id,)
+        ).fetchone():
+            return None
+
+        set_clauses: list[str] = ["updated_at=?"]
+        params: list[Any] = [now]
+
+        for col in ("nhi_number", "family_name", "given_names", "date_of_birth", "sex",
+                    "gender_identity", "sex_at_birth", "phone", "email",
+                    "gp_name", "gp_practice", "pho"):
+            if col in updates:
+                set_clauses.append(f"{col}=?")
+                params.append(updates[col])
+
+        if "ethnicity_codes" in updates:
+            codes = updates["ethnicity_codes"] or []
+            set_clauses.append("ethnicity_codes=?")
+            params.append("|".join(codes) if codes else None)
+
+        if "address" in updates:
+            addr = updates["address"] or {}
+            if hasattr(addr, "model_dump"):
+                addr = addr.model_dump()
+            if isinstance(addr, dict):
+                for ak in ("street", "suburb", "city", "postcode", "region"):
+                    if ak in addr:
+                        set_clauses.append(f"address_{ak}=?")
+                        params.append(addr[ak])
+
+        params.append(patient_id)
+        conn.execute(
+            f"UPDATE patients SET {', '.join(set_clauses)} WHERE patient_id=?", params
+        )
+        _audit(conn, "patient_edit", record_id=patient_id, description="Patient updated")
+        result = _patient_with_counts_query(conn, patient_id)
+    return result
+
+
+def delete_patient(patient_id: str) -> bool:
+    with _db_conn() as conn:
+        if not conn.execute(
+            "SELECT 1 FROM patients WHERE patient_id=?", (patient_id,)
+        ).fetchone():
+            return False
+        _audit(conn, "patient_delete", record_id=patient_id, description="Patient deleted")
+        conn.execute(
+            "DELETE FROM redcap_data WHERE record_id IN "
+            "(SELECT record_id FROM encounters WHERE patient_id=?)",
+            (patient_id,),
+        )
+        conn.execute("DELETE FROM encounters WHERE patient_id=?", (patient_id,))
+        conn.execute("DELETE FROM patients WHERE patient_id=?", (patient_id,))
+    return True
+
+
 def set_fhir_bundle_id(record_id: str, bundle_id: str) -> None:
     with _db_conn() as conn:
         conn.execute(
@@ -880,6 +1178,10 @@ __all__ = [
     "list_records",
     "get_audit_log",
     "list_patients",
+    "create_patient",
+    "get_patient",
+    "update_patient",
+    "delete_patient",
     "set_fhir_bundle_id",
     "count_records",
 ]

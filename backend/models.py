@@ -6,7 +6,7 @@ import re
 import uuid
 from typing import Annotated, Literal, get_args
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 # ---------------------------------------------------------------------------
 # Missing data codes (CDISC standard)
@@ -171,15 +171,17 @@ class PatientRecord(BaseModel):
     # Internal ID — generated on creation
     record_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
-    # NZ NHI — required; the national patient identifier used to link encounters
-    nhi_number: str = Field(
-        ...,
-        description="NZ National Health Index (NHI) number — legacy format e.g. ZAA0001, new format e.g. ZZZ00AB",
-    )
+    # Link to an existing patient — if supplied, demographics fields become optional
+    patient_id: str | None = None
+
+    # NZ NHI — required when creating a new patient; optional when patient_id is supplied
+    nhi_number: str | None = None
 
     @field_validator("nhi_number")
     @classmethod
-    def validate_nhi(cls, v: str) -> str:
+    def validate_nhi(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
         v = v.strip().upper()
         if not _NHI_RE.match(v):
             raise ValueError(
@@ -188,11 +190,22 @@ class PatientRecord(BaseModel):
             )
         return v
 
+    @model_validator(mode="after")
+    def check_demographics_or_patient_id(self) -> "PatientRecord":
+        if self.patient_id is None:
+            missing = [f for f in ("nhi_number", "family_name", "given_names", "date_of_birth", "sex")
+                       if not getattr(self, f, None)]
+            if missing:
+                raise ValueError(
+                    f"Fields required when patient_id is not provided: {', '.join(missing)}"
+                )
+        return self
+
     # Demographics
-    family_name: str
-    given_names: str
-    date_of_birth: ISODate
-    sex: SexCode
+    family_name: str | None = None
+    given_names: str | None = None
+    date_of_birth: ISODate | None = None
+    sex: SexCode | None = None
     gender_identity: str | None = None
     sex_at_birth: SexCode | None = None
     ethnicity_codes: list[str] = Field(
@@ -277,3 +290,69 @@ class PatientRecordUpdate(BaseModel):
     immunizations: list[Immunization] | None = None
     social_history: SocialHistory | None = None
     clinical_notes: list[ClinicalNote] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Patient-only models (demographics without encounter data)
+# ---------------------------------------------------------------------------
+
+class PatientCreate(BaseModel):
+    """Create a patient record with demographics only — no encounter."""
+
+    nhi_number: str = Field(..., description="NZ NHI number")
+    family_name: str
+    given_names: str
+    date_of_birth: ISODate
+    sex: SexCode
+    gender_identity: str | None = None
+    sex_at_birth: SexCode | None = None
+    ethnicity_codes: list[str] = Field(default_factory=list)
+    address: NZAddress | None = None
+    phone: str | None = None
+    email: str | None = None
+    gp_name: str | None = None
+    gp_practice: str | None = None
+    pho: str | None = None
+
+    @field_validator("nhi_number")
+    @classmethod
+    def validate_nhi(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not _NHI_RE.match(v):
+            raise ValueError(
+                "NHI must be 3 letters (A–Z excl. I/O) + 4 digits (legacy, e.g. ZAA0001) "
+                "or 3 letters + 2 digits + 2 letters (new format, e.g. ZZZ00AB)"
+            )
+        return v
+
+
+class PatientUpdate(BaseModel):
+    """Partial update of patient demographics — all fields optional."""
+
+    nhi_number: str | None = None
+    family_name: str | None = None
+    given_names: str | None = None
+    date_of_birth: ISODate | None = None
+    sex: SexCode | None = None
+    gender_identity: str | None = None
+    sex_at_birth: SexCode | None = None
+    ethnicity_codes: list[str] | None = None
+    address: NZAddress | None = None
+    phone: str | None = None
+    email: str | None = None
+    gp_name: str | None = None
+    gp_practice: str | None = None
+    pho: str | None = None
+
+    @field_validator("nhi_number")
+    @classmethod
+    def validate_nhi(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip().upper()
+        if not _NHI_RE.match(v):
+            raise ValueError(
+                "NHI must be 3 letters (A–Z excl. I/O) + 4 digits (legacy, e.g. ZAA0001) "
+                "or 3 letters + 2 digits + 2 letters (new format, e.g. ZZZ00AB)"
+            )
+        return v
