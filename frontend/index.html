@@ -244,6 +244,24 @@ pre.fhir-json {
 .step.active .step-label { color: var(--nz-teal); font-weight: 600; }
 .step-line { flex: 1; height: 2px; background: #E2E8F0; margin-top: -14px; }
 .step-line.done { background: var(--nz-green); }
+
+/* Missing data code UI */
+.btn-missing { font-size:10px; padding:3px 6px; background:var(--muted); color:white; border:none; border-radius:4px; cursor:pointer; flex-shrink:0; }
+.btn-missing:hover { background: var(--warn); }
+.missing-code-active { background: #FFF7ED !important; border-color: var(--warn) !important; color: var(--warn) !important; font-weight:700; }
+.missing-picker { position:absolute; background:white; border:1px solid var(--border); border-radius:6px; box-shadow:var(--shadow-lg); z-index:200; padding:8px; min-width:220px; max-height:280px; overflow-y:auto; font-size:12px; }
+.missing-picker div { padding:4px 8px; cursor:pointer; border-radius:4px; }
+.missing-picker div:hover { background:var(--nz-light); }
+.input-with-missing { display:flex; gap:4px; align-items:center; }
+.missing-badge { display:inline-block; background:#FFF7ED; border:1px solid var(--warn); color:var(--warn); border-radius:4px; padding:1px 6px; font-size:11px; font-weight:700; }
+
+/* Branching logic hidden fields */
+.hidden { display:none !important; }
+
+/* Data dictionary table */
+#dict-table { font-size:12px; }
+#dict-table td { padding:6px 10px; }
+#dict-table th { padding:8px 10px; }
 </style>
 </head>
 <body>
@@ -260,6 +278,7 @@ pre.fhir-json {
     <button class="nav-btn" onclick="showPage('page-form')">New Encounter</button>
     <button class="nav-btn" onclick="showPage('page-records'); loadRecords()">Patient Records</button>
     <button class="nav-btn" onclick="showPage('page-fhir'); loadFhirIndex()">FHIR Store</button>
+    <button class="nav-btn" onclick="showPage('page-dict'); loadDataDictionary()">Data Dict</button>
     <span id="hapi-nav-badge" style="font-size:11px;padding:2px 7px;border-radius:10px;background:rgba(255,255,255,.15);color:rgba(255,255,255,.7);cursor:default;" title="HAPI FHIR Server">HAPI ···</span>
   </nav>
   <div class="header-stats" id="header-stats">Loading...</div>
@@ -417,11 +436,11 @@ pre.fhir-json {
               <option value="unknown">Unknown / Unspecified</option>
             </select>
           </div>
-          <div class="form-group">
+          <div class="form-group" id="branch-gender-identity">
             <label>Gender Identity</label>
             <input type="text" id="gender_identity" placeholder="e.g. Transgender woman"/>
           </div>
-          <div class="form-group">
+          <div class="form-group" id="branch-sex-at-birth">
             <label>Sex at Birth</label>
             <select id="sex_at_birth">
               <option value="">Not recorded</option>
@@ -522,6 +541,12 @@ pre.fhir-json {
               <option value="inpatient">Inpatient</option>
               <option value="emergency">Emergency</option>
               <option value="telehealth">Telehealth</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Visit / Event</label>
+            <select id="redcap_event">
+              <option value="baseline_arm_1">Baseline</option>
             </select>
           </div>
           <div class="form-group">
@@ -824,7 +849,7 @@ pre.fhir-json {
               <option value="">Not recorded</option>
             </select>
           </div>
-          <div class="form-group">
+          <div class="form-group" id="branch-pack-years">
             <label>Pack Years</label>
             <input type="number" id="pack_years" placeholder="10" min="0" step="0.5"/>
           </div>
@@ -832,12 +857,9 @@ pre.fhir-json {
             <label>Alcohol Use</label>
             <select id="alcohol_code">
               <option value="">Not recorded</option>
-              <option value="219006">Current drinker</option>
-              <option value="228276006">Occasional drinker</option>
-              <option value="228274009">Non-drinker</option>
             </select>
           </div>
-          <div class="form-group">
+          <div class="form-group" id="branch-alcohol-units">
             <label>Alcohol units/week</label>
             <input type="number" id="alcohol_units" placeholder="0" min="0" step="1"/>
           </div>
@@ -896,15 +918,19 @@ pre.fhir-json {
 
 <!-- ===== RECORDS LIST ===== -->
 <main class="page" id="page-records">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
     <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">Patient Records</h1>
-    <div style="display:flex;gap:8px;flex:1;flex-wrap:wrap;">
-      <input type="text" id="search-family" placeholder="Search by surname..." style="max-width:200px;"/>
-      <input type="text" id="search-nhi" placeholder="NHI number..." style="max-width:140px;font-family:monospace;"/>
-      <input type="date" id="search-date" style="max-width:160px;"/>
-      <button class="btn btn-secondary btn-sm" onclick="loadRecords()">Search</button>
-      <button class="btn btn-primary btn-sm" onclick="showPage('page-form')">+ New Encounter</button>
+    <div style="display:flex;gap:8px;margin-left:auto;">
+      <button id="view-enc-btn" class="btn btn-secondary btn-sm" onclick="switchRecordView('encounter')">Encounter View</button>
+      <button id="view-pat-btn" class="btn btn-secondary btn-sm" onclick="switchRecordView('patient')">Patient View</button>
     </div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
+    <input type="text" id="search-family" placeholder="Search by surname..." style="max-width:200px;"/>
+    <input type="text" id="search-nhi" placeholder="NHI number..." style="max-width:140px;font-family:monospace;"/>
+    <input type="date" id="search-date" style="max-width:160px;"/>
+    <button class="btn btn-secondary btn-sm" onclick="loadRecords()">Search</button>
+    <button class="btn btn-primary btn-sm" onclick="showPage('page-form')">+ New Encounter</button>
   </div>
 
   <div class="card">
@@ -1072,6 +1098,43 @@ pre.fhir-json {
   </div>
 </main>
 
+<!-- ===== DATA DICTIONARY ===== -->
+<main class="page" id="page-dict">
+  <div style="margin-bottom:20px;">
+    <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">REDCap Data Dictionary</h1>
+    <p style="color:var(--muted);margin-top:4px;">Machine-readable field definitions — 18-column REDCap format</p>
+  </div>
+  <div class="card" style="margin-bottom:20px;">
+    <div class="card-header">
+      <h2>Field Definitions</h2>
+      <input type="text" id="dict-filter" placeholder="Filter by name or label..." style="max-width:240px;margin-left:auto;" oninput="filterDictTable(this.value)"/>
+      <button class="btn btn-secondary btn-sm" onclick="window.location.href='/api/data-dictionary.csv'">Download CSV</button>
+    </div>
+    <div class="table-wrap">
+      <table id="dict-table">
+        <thead><tr>
+          <th>Variable</th><th>Form</th><th>Type</th><th>Label</th>
+          <th>Branching Logic</th><th>Required</th><th>Identifier</th><th>Annotation</th>
+        </tr></thead>
+        <tbody id="dict-tbody">
+          <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2>Missing Data Codes (CDISC)</h2></div>
+    <div class="table-wrap">
+      <table id="missing-codes-table">
+        <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+        <tbody id="missing-codes-tbody">
+          <tr><td colspan="2" style="text-align:center;color:var(--muted);padding:16px;">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
 </div><!-- /app-shell -->
 
 <script>
@@ -1079,7 +1142,7 @@ pre.fhir-json {
 // State
 // ============================================================
 const API = '';  // same origin
-let refData = { conditions:{}, medications:{}, allergens:{}, smoking:{}, loinc:{}, ethnicity:{}, regions:[] };
+let refData = { conditions:{}, medications:{}, allergens:{}, smoking:{}, loinc:{}, ethnicity:{}, regions:[], alcohol:{}, events:[], missingCodes:[], dataDictionary:[] };
 let formState = {
   ethnicity_codes: [],
   conditions: [],
@@ -1089,6 +1152,17 @@ let formState = {
   immunizations: [],
 };
 
+// Missing data code state
+let missingCodeState = {}; // inputId -> missing code string or null
+const MISSING_CODES_LIST = ['NI','INV','UNK','NASK','ASKU','NAV','MSK','NA','NAVU','NP','QS','TRC','UNC','DER','PINF','NINF','OTH'];
+const MISSING_CODE_LABELS = { NI:'No information', INV:'Invalid', UNK:'Unknown', NASK:'Not asked', ASKU:'Asked but unknown', NAV:'Temporarily unavailable', MSK:'Masked', NA:'Not applicable', NAVU:'Not available', NP:'Not present', QS:'Sufficient quantity', TRC:'Trace', UNC:'Unencoded', DER:'Derived', PINF:'Positive infinity', NINF:'Negative infinity', OTH:'Other' };
+
+// Branching logic map (field_name -> branching_logic_string), populated from data dictionary
+let BRANCHING_LOGIC = {};
+
+// Records view mode
+let recordViewMode = 'encounter';
+
 // ============================================================
 // Navigation
 // ============================================================
@@ -1096,9 +1170,10 @@ function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-  const map = { 'page-home':'Dashboard', 'page-form':'New Encounter', 'page-records':'Patient Records', 'page-fhir':'FHIR Store' };
+  const map = { 'page-home':'Dashboard', 'page-form':'New Encounter', 'page-records':'Patient Records', 'page-fhir':'FHIR Store', 'page-dict':'Data Dict' };
   document.querySelectorAll('.nav-btn').forEach(b => { if(b.textContent.trim() === map[id]) b.classList.add('active'); });
   loadStats();
+  if (id === 'page-dict') loadDataDictionary();
 }
 
 // ============================================================
@@ -1135,7 +1210,7 @@ async function apiDelete(path) {
 // ============================================================
 async function loadRefData() {
   try {
-    const [conds, meds, allergens, smoking, loinc, eth, regions] = await Promise.all([
+    const [conds, meds, allergens, smoking, loinc, eth, regions, alcohol, events, missingCodes, dataDictionary] = await Promise.all([
       apiGet('/api/ref/snomed/conditions'),
       apiGet('/api/ref/snomed/medications'),
       apiGet('/api/ref/snomed/allergens'),
@@ -1143,8 +1218,16 @@ async function loadRefData() {
       apiGet('/api/ref/loinc/observations'),
       apiGet('/api/ref/ethnicity'),
       apiGet('/api/ref/regions'),
+      apiGet('/api/ref/snomed/alcohol'),
+      apiGet('/api/ref/events'),
+      apiGet('/api/ref/missing-codes'),
+      apiGet('/api/data-dictionary'),
     ]);
-    refData = { conditions: conds, medications: meds, allergens, smoking, loinc, ethnicity: eth, regions };
+    refData = { conditions: conds, medications: meds, allergens, smoking, loinc, ethnicity: eth, regions, alcohol, events, missingCodes, dataDictionary };
+    // Build branching logic map
+    dataDictionary.filter(f => f.branching_logic).forEach(f => {
+      BRANCHING_LOGIC[f.variable_field_name] = f.branching_logic;
+    });
     populateDropdowns();
   } catch(e) {
     console.error('Failed to load ref data:', e);
@@ -1191,12 +1274,32 @@ function populateDropdowns() {
     o.value = `${code}|${display}`; o.textContent = display; smk.appendChild(o);
   });
 
+  // Alcohol (just code, no display suffix)
+  const alc = document.getElementById('alcohol_code');
+  Object.entries(refData.alcohol).forEach(([code, display]) => {
+    const o = document.createElement('option');
+    o.value = code; o.textContent = display; alc.appendChild(o);
+  });
+
   // Regions
   const reg = document.getElementById('addr_region');
   refData.regions.forEach(r => {
     const o = document.createElement('option');
     o.value = r; o.textContent = r; reg.appendChild(o);
   });
+
+  // Events selector
+  const evSel = document.getElementById('redcap_event');
+  if (evSel) {
+    // Clear existing options
+    evSel.innerHTML = '';
+    refData.events.forEach(ev => {
+      const o = document.createElement('option');
+      o.value = ev.unique_event_name;
+      o.textContent = ev.event_label;
+      evSel.appendChild(o);
+    });
+  }
 
   // Ethnicity checkboxes
   const ethContainer = document.getElementById('ethnicity-container');
@@ -1211,6 +1314,15 @@ function populateDropdowns() {
     btn.addEventListener('click', () => toggleEthnicity(code, display, btn));
     ethContainer.appendChild(btn);
   });
+
+  // Wire change events for branching logic
+  ['smoking_code', 'alcohol_code', 'sex'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', applyBranchingLogic);
+  });
+
+  // Apply initial branching logic
+  applyBranchingLogic();
 }
 
 function toggleEthnicity(code, display, btn) {
@@ -1270,6 +1382,269 @@ function calcBMI() {
   } else {
     document.getElementById('v_bmi').value = '';
   }
+}
+
+// ============================================================
+// Missing data code buttons
+// ============================================================
+function attachMissingButton(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input || input.dataset.missingAttached) return;
+  input.dataset.missingAttached = 'true';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'input-with-missing';
+  // Insert wrapper before input, then move input inside
+  input.parentNode.insertBefore(wrapper, input);
+  wrapper.appendChild(input);
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn-missing';
+  btn.title = 'Set missing data code';
+  btn.textContent = 'M';
+  wrapper.appendChild(btn);
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    // Remove any existing picker
+    document.querySelectorAll('.missing-picker').forEach(p => p.remove());
+
+    const picker = document.createElement('div');
+    picker.className = 'missing-picker';
+    picker.style.position = 'absolute';
+
+    // Clear option
+    const clearDiv = document.createElement('div');
+    clearDiv.textContent = '✕ Clear';
+    clearDiv.style.color = 'var(--muted)';
+    clearDiv.style.fontStyle = 'italic';
+    clearDiv.addEventListener('click', () => { clearMissingCode(inputId); picker.remove(); });
+    picker.appendChild(clearDiv);
+
+    MISSING_CODES_LIST.forEach(code => {
+      const d = document.createElement('div');
+      d.innerHTML = `<strong>${code}</strong> — ${MISSING_CODE_LABELS[code] || code}`;
+      d.addEventListener('click', () => { setMissingCode(inputId, code); picker.remove(); });
+      picker.appendChild(d);
+    });
+
+    btn.parentNode.style.position = 'relative';
+    btn.parentNode.appendChild(picker);
+
+    // Close on outside click
+    setTimeout(() => {
+      document.addEventListener('click', function onClickOutside() {
+        picker.remove();
+        document.removeEventListener('click', onClickOutside);
+      }, { once: true });
+    }, 0);
+  });
+}
+
+function setMissingCode(inputId, code) {
+  missingCodeState[inputId] = code;
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  input.value = code;
+  input.classList.add('missing-code-active');
+  input.disabled = true;
+}
+
+function clearMissingCode(inputId) {
+  delete missingCodeState[inputId];
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  input.value = '';
+  input.classList.remove('missing-code-active');
+  input.disabled = false;
+}
+
+// ============================================================
+// Branching logic evaluator
+// ============================================================
+function evaluateBranchingLogic(logic, getFieldValue) {
+  if (!logic || logic.trim() === '') return true;
+  // Strip cross-event prefix [event_name][field] -> [field]
+  let expr = logic.replace(/\[[a-z0-9_]+\]\[([a-z0-9_]+)\]/gi, '[$1]');
+  // Checkbox sub-fields [field(code)] -> look up field___code
+  expr = expr.replace(/\[([a-z0-9_]+)\(([^)]+)\)\]/gi, (_m, field, code) => {
+    const val = getFieldValue(`${field}___${code}`);
+    return JSON.stringify(val != null ? String(val) : '');
+  });
+  // Regular field references [field_name]
+  expr = expr.replace(/\[([a-z0-9_]+)\]/gi, (_m, field) => {
+    const val = getFieldValue(field);
+    return JSON.stringify(val != null ? String(val) : '');
+  });
+  // Operator translation
+  expr = expr.replace(/<>/g, '!=').replace(/\band\b/gi, '&&').replace(/\bor\b/gi, '||');
+  try {
+    return Boolean(new Function('"use strict"; return (' + expr + ')')());
+  } catch (e) {
+    console.warn('Branching logic eval error:', e.message, '| expr:', expr);
+    return true; // fail open
+  }
+}
+
+function getFormFieldValue(fieldName) {
+  const directMap = {
+    sex: () => document.getElementById('sex').value,
+    smoking_status_code: () => {
+      const raw = document.getElementById('smoking_code').value;
+      return raw ? raw.split('|')[0] : '';
+    },
+    alcohol_status_code: () => document.getElementById('alcohol_code').value || '',
+  };
+  if (directMap[fieldName]) return directMap[fieldName]();
+  const el = document.getElementById(fieldName);
+  return el ? el.value : '';
+}
+
+function applyBranchingLogic() {
+  const FIELD_CONTAINER_MAP = {
+    'social_history.pack_years':             'branch-pack-years',
+    'social_history.alcohol_units_per_week': 'branch-alcohol-units',
+    'sex_at_birth':                          'branch-sex-at-birth',
+    'gender_identity':                       'branch-gender-identity',
+  };
+  // Map branching logic field names (from data dict) to form field names for eval
+  const EVAL_FIELD_MAP = {
+    'social_history.pack_years':             'pack_years',
+    'social_history.alcohol_units_per_week': 'alcohol_units_per_week',
+  };
+  Object.entries(BRANCHING_LOGIC).forEach(([fieldName, logic]) => {
+    const containerId = FIELD_CONTAINER_MAP[fieldName];
+    if (!containerId) return;
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const show = evaluateBranchingLogic(logic, getFormFieldValue);
+    container.classList.toggle('hidden', !show);
+  });
+}
+
+// ============================================================
+// Records view switch
+// ============================================================
+function switchRecordView(mode) {
+  recordViewMode = mode;
+  const encBtn = document.getElementById('view-enc-btn');
+  const patBtn = document.getElementById('view-pat-btn');
+  if (encBtn) {
+    encBtn.style.fontWeight = mode === 'encounter' ? '700' : '';
+    encBtn.style.borderColor = mode === 'encounter' ? 'var(--nz-teal)' : '';
+    encBtn.style.color = mode === 'encounter' ? 'var(--nz-teal)' : '';
+  }
+  if (patBtn) {
+    patBtn.style.fontWeight = mode === 'patient' ? '700' : '';
+    patBtn.style.borderColor = mode === 'patient' ? 'var(--nz-teal)' : '';
+    patBtn.style.color = mode === 'patient' ? 'var(--nz-teal)' : '';
+  }
+  loadRecords();
+}
+
+async function togglePatientTimeline(patientId, nhi, btn) {
+  // Check if sub-row already exists
+  const existingRow = document.getElementById('timeline-' + patientId);
+  if (existingRow) {
+    existingRow.remove();
+    btn.textContent = 'Timeline';
+    return;
+  }
+  btn.textContent = '...';
+  try {
+    const records = await apiGet('/api/records?nhi=' + encodeURIComponent(nhi) + '&limit=100');
+    const tr = document.createElement('tr');
+    tr.id = 'timeline-' + patientId;
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.style.background = '#f8fafc';
+    td.style.padding = '0 24px 12px 24px';
+
+    if (!records.length) {
+      td.innerHTML = '<div style="color:var(--muted);padding:8px 0;font-size:12px;">No encounters found.</div>';
+    } else {
+      const rows = records.map(r => `
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px 10px;font-size:12px;">${r.redcap_event_name || 'baseline_arm_1'}</td>
+          <td style="padding:6px 10px;font-size:12px;">${r.encounter_date}</td>
+          <td style="padding:6px 10px;font-size:12px;">${r.encounter_type}</td>
+          <td style="padding:6px 10px;font-size:12px;">
+            <button class="btn btn-secondary btn-sm" onclick="viewRecord('${r.record_id}')">View</button>
+            <button class="btn btn-fhir btn-sm" onclick="convertRecord('${r.record_id}', this)">FHIR</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteRecord('${r.record_id}')">Del</button>
+          </td>
+        </tr>
+      `).join('');
+      td.innerHTML = `<table style="width:100%;font-size:12px;border-collapse:collapse;margin-top:8px;">
+        <thead><tr style="font-weight:700;color:var(--muted);">
+          <th style="padding:4px 10px;text-align:left;">Event</th>
+          <th style="padding:4px 10px;text-align:left;">Date</th>
+          <th style="padding:4px 10px;text-align:left;">Type</th>
+          <th style="padding:4px 10px;text-align:left;">Actions</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+    tr.appendChild(td);
+
+    // Insert after the clicked row's parent
+    btn.closest('tr').insertAdjacentElement('afterend', tr);
+    btn.textContent = 'Collapse';
+  } catch(e) {
+    btn.textContent = 'Timeline';
+    console.error(e);
+  }
+}
+
+// ============================================================
+// Data dictionary
+// ============================================================
+async function loadDataDictionary() {
+  const tbody = document.getElementById('dict-tbody');
+  const mcTbody = document.getElementById('missing-codes-tbody');
+  if (!tbody) return;
+
+  try {
+    const [fields, codes] = await Promise.all([
+      apiGet('/api/data-dictionary'),
+      apiGet('/api/ref/missing-codes'),
+    ]);
+
+    tbody.innerHTML = '';
+    fields.forEach(f => {
+      const tr = document.createElement('tr');
+      tr.dataset.name = (f.variable_field_name || '').toLowerCase();
+      tr.dataset.label = (f.field_label || '').toLowerCase();
+      tr.innerHTML = `
+        <td><code style="font-size:11px;">${f.variable_field_name || ''}</code></td>
+        <td style="color:var(--muted);">${f.form_name || ''}</td>
+        <td><span class="badge" style="background:#E8F5F0;color:var(--nz-dark);">${f.field_type || ''}</span></td>
+        <td>${f.field_label || ''}</td>
+        <td style="font-size:11px;color:var(--muted);font-family:monospace;">${f.branching_logic || ''}</td>
+        <td>${f.required_field === 'y' ? '<span style="color:var(--danger);">*</span>' : ''}</td>
+        <td>${f.identifier === 'y' ? '<span style="color:var(--warn);">PHI</span>' : ''}</td>
+        <td style="font-size:11px;color:var(--muted);">${f.field_annotation || ''}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    if (mcTbody) {
+      mcTbody.innerHTML = codes.map(c => `
+        <tr><td><strong>${c.code}</strong></td><td>${c.label}</td></tr>
+      `).join('');
+    }
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--danger);padding:16px;">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function filterDictTable(query) {
+  const q = query.toLowerCase();
+  document.querySelectorAll('#dict-tbody tr').forEach(tr => {
+    const match = tr.dataset.name.includes(q) || tr.dataset.label.includes(q);
+    tr.style.display = match ? '' : 'none';
+  });
 }
 
 // ============================================================
@@ -1375,7 +1750,11 @@ async function submitRecord() {
   const spinner = document.getElementById('submit-spinner');
 
   // Gather vitals
-  const getNum = id => { const v = document.getElementById(id).value; return v ? parseFloat(v) : null; };
+  const getNum = id => {
+    if (missingCodeState[id]) return missingCodeState[id]; // return string code
+    const v = document.getElementById(id).value;
+    return v ? parseFloat(v) : null;
+  };
   const vitals = {
     systolic_bp: getNum('v_sbp'),
     diastolic_bp: getNum('v_dbp'),
@@ -1438,6 +1817,7 @@ async function submitRecord() {
     pho: document.getElementById('pho').value || null,
     encounter_date: document.getElementById('encounter_date').value,
     encounter_type: document.getElementById('encounter_type').value,
+    redcap_event_name: document.getElementById('redcap_event').value || 'baseline_arm_1',
     presenting_complaint: document.getElementById('presenting_complaint').value || null,
     clinician_name: document.getElementById('clinician_name').value || null,
     clinician_role: document.getElementById('clinician_role').value || null,
@@ -1484,6 +1864,18 @@ function resetForm() {
   // Set today's date
   const today = new Date().toISOString().slice(0,10);
   document.getElementById('encounter_date').value = today;
+
+  // Clear missing code state
+  const missingInputIds = ['v_sbp','v_dbp','v_hr','v_rr','v_temp','v_spo2','v_weight','v_height','v_bmi','pack_years','alcohol_units'];
+  missingInputIds.forEach(id => clearMissingCode(id));
+  missingCodeState = {};
+
+  // Reset event selector
+  const evSel = document.getElementById('redcap_event');
+  if (evSel) evSel.selectedIndex = 0;
+
+  // Re-apply branching logic
+  applyBranchingLogic();
 }
 
 // ============================================================
@@ -1494,12 +1886,56 @@ async function loadRecords() {
   const nhi = document.getElementById('search-nhi').value.trim().toUpperCase();
   const date = document.getElementById('search-date').value;
 
+  const tbody = document.getElementById('records-tbody');
+
+  if (recordViewMode === 'patient') {
+    // Patient view
+    const table = document.getElementById('records-table');
+    const thead = table.querySelector('thead tr');
+    thead.innerHTML = '<th>NHI</th><th>Patient</th><th>DOB</th><th>Sex</th><th>Encounters</th><th>Last Visit</th><th>Actions</th>';
+
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;"><span class="spinner"></span></td></tr>';
+    try {
+      let url = '/api/patients?limit=100';
+      if (nhi) url += `&nhi=${encodeURIComponent(nhi)}`;
+      if (fam) url += `&family_name=${encodeURIComponent(fam)}`;
+      const patients = await apiGet(url);
+      if (!patients.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">No patients found</td></tr>';
+        return;
+      }
+      tbody.innerHTML = '';
+      patients.forEach(p => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${p.nhi_number ? `<span class="nhi-pill">${p.nhi_number}</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+          <td><strong>${p.family_name}</strong>, ${p.given_names}</td>
+          <td>${p.date_of_birth || '—'}</td>
+          <td>${p.sex}</td>
+          <td>${p.encounter_count}</td>
+          <td>${p.last_encounter_date || '—'}</td>
+          <td>
+            <button class="btn btn-secondary btn-sm" onclick="togglePatientTimeline('${p.patient_id}', '${p.nhi_number || ''}', this)">Timeline</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    } catch(e) {
+      tbody.innerHTML = `<tr><td colspan="7" style="color:var(--danger);padding:16px;">Error: ${e.message}</td></tr>`;
+    }
+    return;
+  }
+
+  // Encounter view (default)
+  const table = document.getElementById('records-table');
+  const thead = table.querySelector('thead tr');
+  thead.innerHTML = '<th>NHI</th><th>Patient</th><th>DOB</th><th>Date</th><th>Type</th><th>Complaint</th><th>FHIR</th><th>Actions</th>';
+
   let url = '/api/records?limit=100';
   if (fam) url += `&family_name=${encodeURIComponent(fam)}`;
   if (nhi) url += `&nhi=${encodeURIComponent(nhi)}`;
   if (date) url += `&encounter_date=${date}`;
 
-  const tbody = document.getElementById('records-tbody');
   tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;"><span class="spinner"></span></td></tr>';
 
   try {
@@ -1577,8 +2013,19 @@ async function deleteRecord(recordId) {
   loadStats();
 }
 
+function _renderVitalValue(v) {
+  if (v !== null && v !== undefined && MISSING_CODES_LIST.includes(String(v))) {
+    return `<span class="missing-badge" title="${MISSING_CODE_LABELS[v] || v}">${v}</span>`;
+  }
+  return v;
+}
+
 async function viewRecord(recordId) {
-  const r = await apiGet('/api/records/' + recordId);
+  const [r, auditLog] = await Promise.all([
+    apiGet('/api/records/' + recordId),
+    apiGet('/api/records/' + recordId + '/audit'),
+  ]);
+
   const html = `
     <div style="display:grid;gap:12px;">
       <div class="card">
@@ -1596,6 +2043,7 @@ async function viewRecord(recordId) {
         <div class="card-header"><h2>Encounter</h2></div>
         <div class="card-body" style="font-size:13px;">
           <div><strong>Date:</strong> ${r.encounter_date} | <strong>Type:</strong> ${r.encounter_type}</div>
+          <div><strong>Event:</strong> ${r.redcap_event_name || 'baseline_arm_1'}</div>
           <div><strong>Clinician:</strong> ${r.clinician_name||'—'} (${r.clinician_role||''})</div>
           <div style="margin-top:8px;"><strong>Presenting Complaint:</strong><br>${r.presenting_complaint||'—'}</div>
         </div>
@@ -1603,12 +2051,12 @@ async function viewRecord(recordId) {
       ${r.vitals ? `<div class="card">
         <div class="card-header"><h2>Vital Signs</h2></div>
         <div class="card-body" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:13px;">
-          ${r.vitals.systolic_bp ? `<div>BP: ${r.vitals.systolic_bp}/${r.vitals.diastolic_bp} mmHg</div>` : ''}
-          ${r.vitals.heart_rate ? `<div>HR: ${r.vitals.heart_rate} bpm</div>` : ''}
-          ${r.vitals.temperature ? `<div>Temp: ${r.vitals.temperature}°C</div>` : ''}
-          ${r.vitals.spo2 ? `<div>SpO2: ${r.vitals.spo2}%</div>` : ''}
-          ${r.vitals.weight_kg ? `<div>Weight: ${r.vitals.weight_kg} kg</div>` : ''}
-          ${r.vitals.bmi ? `<div>BMI: ${r.vitals.bmi}</div>` : ''}
+          ${r.vitals.systolic_bp != null ? `<div>BP: ${_renderVitalValue(r.vitals.systolic_bp)}/${_renderVitalValue(r.vitals.diastolic_bp)} mmHg</div>` : ''}
+          ${r.vitals.heart_rate != null ? `<div>HR: ${_renderVitalValue(r.vitals.heart_rate)} bpm</div>` : ''}
+          ${r.vitals.temperature != null ? `<div>Temp: ${_renderVitalValue(r.vitals.temperature)}°C</div>` : ''}
+          ${r.vitals.spo2 != null ? `<div>SpO2: ${_renderVitalValue(r.vitals.spo2)}%</div>` : ''}
+          ${r.vitals.weight_kg != null ? `<div>Weight: ${_renderVitalValue(r.vitals.weight_kg)} kg</div>` : ''}
+          ${r.vitals.bmi != null ? `<div>BMI: ${_renderVitalValue(r.vitals.bmi)}</div>` : ''}
         </div>
       </div>` : ''}
       ${(r.conditions||[]).length ? `<div class="card">
@@ -1625,13 +2073,39 @@ async function viewRecord(recordId) {
       </div>` : ''}
       ${(r.lab_results||[]).length ? `<div class="card">
         <div class="card-header"><h2>Lab Results</h2></div>
-        <div class="card-body"><div class="chip-list">${r.lab_results.map(l=>{const m=refData.loinc[l.loinc_code]||{};return`<div class="chip lab">${m.display||l.loinc_code}: ${l.value} ${l.unit}${l.abnormal_flag?' ['+l.abnormal_flag+']':''}</div>`;}).join('')}</div></div>
+        <div class="card-body"><div class="chip-list">${r.lab_results.map(l=>{const m=refData.loinc[l.loinc_code]||{};const vdisp=MISSING_CODES_LIST.includes(String(l.value))?`<span class="missing-badge">${l.value}</span>`:l.value;return`<div class="chip lab">${m.display||l.loinc_code}: ${vdisp} ${l.unit}${l.abnormal_flag?' ['+l.abnormal_flag+']':''}</div>`;}).join('')}</div></div>
       </div>` : ''}
       ${r.fhir_bundle_id ? `<div style="margin-top:8px;">
         <button class="btn btn-fhir" onclick="loadAndShowFhir('${r.fhir_bundle_id}')">View FHIR Bundle</button>
       </div>` : `<div style="margin-top:8px;">
         <button class="btn btn-fhir" onclick="convertRecord('${r.record_id}', this);closeDetailPanel()">⚡ Convert to FHIR</button>
       </div>`}
+      <div class="card" style="margin-top:4px;">
+        <div class="card-header"><h2>Audit Log</h2></div>
+        <div class="card-body" style="padding:0;">
+          ${auditLog.length === 0
+            ? '<div style="padding:16px;color:var(--muted);font-size:13px;">No audit history yet.</div>'
+            : `<table style="width:100%;font-size:12px;border-collapse:collapse;">
+                 <thead><tr style="background:#f8fafc;font-weight:600;">
+                   <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);">Timestamp (UTC)</th>
+                   <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);">Field</th>
+                   <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);color:#991b1b;">Old Value</th>
+                   <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);color:#065f46;">New Value</th>
+                   <th style="padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);">Action</th>
+                 </tr></thead>
+                 <tbody>
+                   ${auditLog.map(entry => `<tr style="border-bottom:1px solid var(--border);">
+                     <td style="padding:6px 12px;color:var(--muted);">${entry.ts}</td>
+                     <td style="padding:6px 12px;font-family:monospace;">${entry.field_name || '—'}</td>
+                     <td style="padding:6px 12px;color:#991b1b;">${entry.old_value != null ? entry.old_value : '—'}</td>
+                     <td style="padding:6px 12px;color:#065f46;">${entry.new_value != null ? entry.new_value : '—'}</td>
+                     <td style="padding:6px 12px;"><span class="badge">${entry.action}</span></td>
+                   </tr>`).join('')}
+                 </tbody>
+               </table>`
+          }
+        </div>
+      </div>
     </div>
   `;
   showDetailPanel(`${r.family_name}, ${r.given_names}`, html);
@@ -2006,6 +2480,9 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('encounter_date').value = today;
   document.getElementById('lab_date').value = today;
   document.getElementById('imm_date').value = today;
+
+  // Attach missing data code buttons (must happen before loadRefData so BMI listeners are untouched)
+  ['v_sbp','v_dbp','v_hr','v_rr','v_temp','v_spo2','v_weight','v_height','v_bmi','pack_years','alcohol_units'].forEach(attachMissingButton);
 
   loadRefData();
   loadStats();

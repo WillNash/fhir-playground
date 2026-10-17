@@ -22,6 +22,7 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from .models import MISSING_CODES
 from .snomed import (
     SNOMED_SYSTEM,
     NZ_ETHNICITY_SYSTEM,
@@ -30,6 +31,10 @@ from .snomed import (
     OBSERVATIONS,
     NZ_ETHNICITY,
 )
+
+
+def _is_missing_code(v: object) -> bool:
+    return isinstance(v, str) and v in MISSING_CODES
 
 # ---------------------------------------------------------------------------
 # NZ Base IG profile URLs (canonical — https://fhir.org.nz/ig/base/)
@@ -319,7 +324,7 @@ def build_vitals(
     # Blood pressure panel — built from both components together (FHIR R4 BP profile).
     sbp = vitals_raw.get("systolic_bp")
     dbp = vitals_raw.get("diastolic_bp")
-    if sbp and dbp:
+    if sbp is not None and dbp is not None and not _is_missing_code(sbp) and not _is_missing_code(dbp):
         observations.append({
             "resourceType": "Observation",
             "id": _uuid(),
@@ -352,7 +357,7 @@ def build_vitals(
 
     # SpO2 — dual-coded per FHIR R4 Vital Signs profile (primary 2708-6, supplementary 59408-5).
     spo2_val = vitals_raw.get("spo2")
-    if spo2_val is not None:
+    if spo2_val is not None and not _is_missing_code(spo2_val):
         observations.append({
             "resourceType": "Observation",
             "id": _uuid(),
@@ -384,7 +389,7 @@ def build_vitals(
         if field in skip_for_bp:
             continue
         value = vitals_raw.get(field)
-        if value is None:
+        if value is None or _is_missing_code(value):
             continue
         obs_meta = OBSERVATIONS.get(loinc, {})
         observations.append({
@@ -421,6 +426,9 @@ def build_lab_observation(
     unit = lab.get("unit", obs_meta.get("unit", ""))
     ucum = obs_meta.get("ucum", unit)
 
+    lab_value = lab.get("value")
+    value_is_missing = _is_missing_code(lab_value)
+
     obs: dict[str, Any] = {
         "resourceType": "Observation",
         "id": _uuid(),
@@ -434,23 +442,34 @@ def build_lab_observation(
         "subject": _ref("Patient", patient_id),
         "encounter": _ref("Encounter", encounter_id),
         "effectiveDateTime": lab.get("collected_date", _today_nz()),
-        "valueQuantity": {
-            "value": lab["value"],
+    }
+
+    if value_is_missing:
+        obs["dataAbsentReason"] = {
+            "coding": [{
+                "system": "http://terminology.hl7.org/CodeSystem/data-absent-reason",
+                "code": "unknown",
+                "display": "Unknown",
+            }]
+        }
+    else:
+        obs["valueQuantity"] = {
+            "value": lab_value,
             "unit": unit,
             "system": _SYS_UCUM,
             "code": ucum,
-        },
-    }
+        }
 
     low = lab.get("reference_range_low")
     high = lab.get("reference_range_high")
-    if low is not None or high is not None:
+    if not value_is_missing and (low is not None or high is not None):
         rr: dict[str, Any] = {}
-        if low is not None:
+        if low is not None and not _is_missing_code(low):
             rr["low"] = {"value": low, "unit": unit, "system": _SYS_UCUM, "code": ucum}
-        if high is not None:
+        if high is not None and not _is_missing_code(high):
             rr["high"] = {"value": high, "unit": unit, "system": _SYS_UCUM, "code": ucum}
-        obs["referenceRange"] = [rr]
+        if rr:
+            obs["referenceRange"] = [rr]
 
     flag = lab.get("abnormal_flag")
     if flag and flag != "N":
@@ -647,7 +666,7 @@ def build_social_history_observations(
             }]},
         })
 
-    if social.get("alcohol_units_per_week") is not None:
+    if social.get("alcohol_units_per_week") is not None and not _is_missing_code(social.get("alcohol_units_per_week")):
         obs_list.append({
             "resourceType": "Observation",
             "id": _uuid(),

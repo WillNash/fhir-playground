@@ -42,6 +42,7 @@ PATIENTS = [
         "given_names": "Aroha",
         "date_of_birth": "1975-03-15",
         "sex": "female",
+        "redcap_event_name": "baseline_arm_1",
         "sex_at_birth": "female",
         "ethnicity_codes": ["21111"],
         "address": {
@@ -160,6 +161,7 @@ PATIENTS = [
         "given_names": "Hemi",
         "date_of_birth": "1980-06-22",
         "sex": "male",
+        "redcap_event_name": "baseline_arm_1",
         "sex_at_birth": "male",
         "ethnicity_codes": ["21111"],
         "address": {
@@ -259,6 +261,7 @@ PATIENTS = [
         "given_names": "Lien",
         "date_of_birth": "1958-11-03",
         "sex": "female",
+        "redcap_event_name": "baseline_arm_1",
         "sex_at_birth": "female",
         "ethnicity_codes": ["41311"],
         "address": {
@@ -378,45 +381,87 @@ PATIENTS = [
 
 
 # ---------------------------------------------------------------------------
+# Follow-up encounters (longitudinal — same NHI as existing patient)
+# ---------------------------------------------------------------------------
+
+FOLLOWUP_ENCOUNTERS = [
+    {
+        "nhi_number": "ZAA0001",
+        "family_name": "Tane",
+        "given_names": "Aroha",
+        "date_of_birth": "1975-03-15",
+        "sex": "female",
+        "redcap_event_name": "followup_1_arm_1",
+        "encounter_date": "2026-07-15",
+        "encounter_type": "ambulatory",
+        "presenting_complaint": "3-month diabetes review",
+        "clinician_name": "Dr Hemi Parata",
+        "clinician_role": "GP",
+        "vitals": {
+            "systolic_bp": 128,
+            "diastolic_bp": 82,
+            "heart_rate": 72,
+            "weight_kg": 86.2,
+            "bmi": 32.1,
+        },
+        "conditions": [],
+        "medications": [],
+        "allergies": [],
+        "lab_results": [],
+        "immunizations": [],
+    }
+]
+
+
+# ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
+
+def _seed_record(p: dict, label: str = "record") -> None:
+    name = f"{p['given_names']} {p['family_name']}"
+    nhi = p.get("nhi_number", "—")
+    event = p.get("redcap_event_name", "baseline_arm_1")
+
+    print(f"  Creating {label}: {name} ({nhi}, {event})…", end=" ", flush=True)
+    try:
+        rec = post("/api/records", p)
+    except urllib.error.URLError as e:
+        print(f"\n  ERROR — could not reach {BASE}: {e}")
+        print("  Is the app running?  bash run.sh")
+        sys.exit(1)
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"\n  ERROR {e.code}: {body}")
+        sys.exit(1)
+
+    record_id = rec["record_id"]
+    print(f"OK (id={record_id[:8]}…)")
+
+    print(f"  Converting to FHIR…", end=" ", flush=True)
+    try:
+        result = post(f"/api/records/{record_id}/convert", {})
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        print(f"\n  ERROR {e.code}: {body}")
+        sys.exit(1)
+
+    bundle_id = result["bundle_id"]
+    resource_count = result["resource_count"]
+    hapi = result.get("hapi", {})
+    hapi_status = hapi.get("status", "—")
+    print(f"OK (bundle={bundle_id[:8]}…, {resource_count} resources, HAPI={hapi_status})")
+    print()
+
 
 def main() -> None:
     print(f"Seeding demo data → {BASE}\n")
 
     for p in PATIENTS:
-        name = f"{p['given_names']} {p['family_name']}"
-        nhi = p["nhi_number"]
+        _seed_record(p, "record")
 
-        print(f"  Creating record: {name} ({nhi})…", end=" ", flush=True)
-        try:
-            rec = post("/api/records", p)
-        except urllib.error.URLError as e:
-            print(f"\n  ERROR — could not reach {BASE}: {e}")
-            print("  Is the app running?  bash run.sh")
-            sys.exit(1)
-        except urllib.error.HTTPError as e:
-            body = e.read().decode()
-            print(f"\n  ERROR {e.code}: {body}")
-            sys.exit(1)
-
-        record_id = rec["record_id"]
-        print(f"OK (id={record_id[:8]}…)")
-
-        print(f"  Converting to FHIR…", end=" ", flush=True)
-        try:
-            result = post(f"/api/records/{record_id}/convert", {})
-        except urllib.error.HTTPError as e:
-            body = e.read().decode()
-            print(f"\n  ERROR {e.code}: {body}")
-            sys.exit(1)
-
-        bundle_id = result["bundle_id"]
-        resource_count = result["resource_count"]
-        hapi = result.get("hapi", {})
-        hapi_status = hapi.get("status", "—")
-        print(f"OK (bundle={bundle_id[:8]}…, {resource_count} resources, HAPI={hapi_status})")
-        print()
+    print("Seeding follow-up encounters…\n")
+    for p in FOLLOWUP_ENCOUNTERS:
+        _seed_record(p, "follow-up")
 
     print("Done. Open http://localhost:8000 → Records tab to see the patients.")
     print("      Open FHIR Store to browse the generated bundles.")

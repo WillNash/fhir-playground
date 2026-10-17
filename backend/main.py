@@ -37,14 +37,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+import csv
+import io
+
 from . import hapi_client
 from .converter import clinical_record_to_fhir_bundle, get_patient_id_from_bundle
+from .data_dictionary import DATA_DICTIONARY, EVENTS, MISSING_DATA_CODES
 from .db import (
     count_records,
     create_record,
     delete_record,
+    get_audit_log,
     get_record,
     init_db,
+    list_patients,
     list_records,
     set_fhir_bundle_id,
     update_record,
@@ -344,6 +350,86 @@ async def hapi_proxy(path: str, request: Request) -> JSONResponse:
         raise HTTPException(status_code=503, detail="HAPI FHIR server is not reachable")
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+
+
+# ---------------------------------------------------------------------------
+# Audit log
+# ---------------------------------------------------------------------------
+
+@app.get("/api/records/{record_id}/audit")
+async def get_record_audit(record_id: str) -> list[dict[str, Any]]:
+    return get_audit_log(record_id)
+
+
+# ---------------------------------------------------------------------------
+# Patients list
+# ---------------------------------------------------------------------------
+
+@app.get("/api/patients")
+async def list_all_patients(
+    nhi: str | None = Query(None),
+    family_name: str | None = Query(None),
+    limit: int = Query(50, le=200),
+    offset: int = Query(0),
+) -> list[dict[str, Any]]:
+    return list_patients(nhi=nhi, family_name=family_name, limit=limit, offset=offset)
+
+
+# ---------------------------------------------------------------------------
+# Data dictionary
+# ---------------------------------------------------------------------------
+
+@app.get("/api/data-dictionary")
+async def get_data_dictionary() -> list[dict[str, Any]]:
+    return DATA_DICTIONARY
+
+
+@app.get("/api/data-dictionary.csv")
+async def get_data_dictionary_csv() -> Response:
+    headers_map = [
+        ("variable_field_name",                       "Variable / Field Name"),
+        ("form_name",                                 "Form Name"),
+        ("section_header",                            "Section Header"),
+        ("field_type",                                "Field Type"),
+        ("field_label",                               "Field Label"),
+        ("choices_calculations_slider_labels",         "Choices, Calculations, OR Slider Labels"),
+        ("field_note",                                "Field Note"),
+        ("text_validation_type_or_show_slider_number", "Text Validation Type OR Show Slider Number"),
+        ("text_validation_min",                       "Text Validation Min"),
+        ("text_validation_max",                       "Text Validation Max"),
+        ("identifier",                                "Identifier?"),
+        ("branching_logic",                           "Branching Logic (Show field only if...)"),
+        ("required_field",                            "Required Field?"),
+        ("custom_alignment",                          "Custom Alignment"),
+        ("question_number_surveys_only",              "Question Number (surveys only)"),
+        ("matrix_group_name",                         "Matrix Group Name"),
+        ("matrix_ranking",                            "Matrix Ranking?"),
+        ("field_annotation",                          "Field Annotation"),
+    ]
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([h for _, h in headers_map])
+    for field in DATA_DICTIONARY:
+        writer.writerow([field.get(k, "") or "" for k, _ in headers_map])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="data_dictionary.csv"'},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Reference data — events and missing codes
+# ---------------------------------------------------------------------------
+
+@app.get("/api/ref/events")
+async def ref_events() -> list[dict[str, Any]]:
+    return EVENTS
+
+
+@app.get("/api/ref/missing-codes")
+async def ref_missing_codes() -> list[dict[str, Any]]:
+    return MISSING_DATA_CODES
 
 
 # ---------------------------------------------------------------------------

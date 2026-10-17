@@ -4,9 +4,31 @@ These are the raw clinical records — NOT FHIR yet.
 """
 import re
 import uuid
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+
+# ---------------------------------------------------------------------------
+# Missing data codes (CDISC standard)
+# ---------------------------------------------------------------------------
+
+MissingCode = Literal[
+    'NI', 'INV', 'UNK', 'NASK', 'ASKU',
+    'NAV', 'MSK', 'NA', 'NAVU', 'NP',
+    'QS', 'TRC', 'UNC', 'DER', 'PINF', 'NINF', 'OTH',
+]
+MISSING_CODES: frozenset[str] = frozenset(get_args(MissingCode))
+
+
+def _validate_numeric_or_missing(v: object) -> object:
+    if v is None or isinstance(v, (int, float)):
+        return v
+    if isinstance(v, str) and v in MISSING_CODES:
+        return v
+    raise ValueError(f"Expected a number or missing code, got {v!r}")
+
+
+NumericOrMissing = Annotated[float | str | None, BeforeValidator(_validate_numeric_or_missing)]
 
 # ISO date pattern — YYYY-MM-DD, basic calendar range check.
 _ISO_DATE_RE = re.compile(r"^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$")
@@ -64,23 +86,23 @@ class NZAddress(BaseModel):
 
 
 class VitalSigns(BaseModel):
-    systolic_bp: float | None = Field(None, description="mmHg")
-    diastolic_bp: float | None = Field(None, description="mmHg")
-    heart_rate: float | None = Field(None, description="beats/min")
-    respiratory_rate: float | None = Field(None, description="breaths/min")
-    temperature: float | None = Field(None, description="degrees Celsius")
-    spo2: float | None = Field(None, description="percent")
-    weight_kg: float | None = Field(None, description="kg")
-    height_cm: float | None = Field(None, description="cm")
-    bmi: float | None = Field(None, description="kg/m2, calculated if not provided")
+    systolic_bp: NumericOrMissing = Field(None, description="mmHg")
+    diastolic_bp: NumericOrMissing = Field(None, description="mmHg")
+    heart_rate: NumericOrMissing = Field(None, description="beats/min")
+    respiratory_rate: NumericOrMissing = Field(None, description="breaths/min")
+    temperature: NumericOrMissing = Field(None, description="degrees Celsius")
+    spo2: NumericOrMissing = Field(None, description="percent")
+    weight_kg: NumericOrMissing = Field(None, description="kg")
+    height_cm: NumericOrMissing = Field(None, description="cm")
+    bmi: NumericOrMissing = Field(None, description="kg/m2, calculated if not provided")
 
 
 class LabResult(BaseModel):
     loinc_code: str
-    value: float
+    value: Annotated[float | str, BeforeValidator(_validate_numeric_or_missing)]
     unit: str
-    reference_range_low: float | None = None
-    reference_range_high: float | None = None
+    reference_range_low: NumericOrMissing = None
+    reference_range_high: NumericOrMissing = None
     abnormal_flag: AbnormalFlag | None = None
     collected_date: ISODate | None = None
 
@@ -123,9 +145,9 @@ class Immunization(BaseModel):
 class SocialHistory(BaseModel):
     smoking_status_code: str | None = None
     smoking_status_display: str | None = None
-    pack_years: float | None = None
+    pack_years: NumericOrMissing = None
     alcohol_status_code: str | None = None
-    alcohol_units_per_week: float | None = None
+    alcohol_units_per_week: NumericOrMissing = None
     occupation: str | None = None
     lives_alone: bool | None = None
 
@@ -176,6 +198,7 @@ class PatientRecord(BaseModel):
     # Encounter context
     encounter_date: ISODate
     encounter_type: EncounterType = "ambulatory"
+    redcap_event_name: str | None = None
     presenting_complaint: str | None = None
     clinician_name: str | None = None
     clinician_role: str | None = None
@@ -214,6 +237,7 @@ class PatientRecordUpdate(BaseModel):
     pho: str | None = None
     encounter_date: ISODate | None = None
     encounter_type: EncounterType | None = None
+    redcap_event_name: str | None = None
     presenting_complaint: str | None = None
     clinician_name: str | None = None
     clinician_role: str | None = None
