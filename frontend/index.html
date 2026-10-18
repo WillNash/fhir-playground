@@ -803,6 +803,23 @@ function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function showToast(msg, type = 'info') {
+  let el = document.getElementById('_toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = '_toast';
+    el.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9999;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:500;box-shadow:0 4px 12px rgba(0,0,0,.2);transition:opacity .3s;';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = '1';
+  el.style.background = type === 'error' ? '#FEE2E2' : '#D1FAE5';
+  el.style.color     = type === 'error' ? '#991B1B' : '#065F46';
+  el.style.border    = type === 'error' ? '1px solid #FCA5A5' : '1px solid #6EE7B7';
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.style.opacity = '0'; }, 3000);
+}
+
 // ============================================================
 // API helpers
 // ============================================================
@@ -2608,6 +2625,8 @@ function renderStatusGrid(patients, statusMap) {
       headerRow2 += `<th style="font-size:10px;font-weight:400;color:var(--muted);white-space:nowrap;padding:2px 4px;${i===0?'border-left:2px solid var(--border)':''}">${escHtml(inst)}</th>`;
     });
   });
+  headerRow1 += `<th style="border-left:2px solid var(--border);padding:4px 8px;font-size:12px;color:var(--fhir-orange);">FHIR</th>`;
+  headerRow2 += `<th style="border-left:2px solid var(--border);font-size:10px;font-weight:400;color:var(--muted);padding:2px 4px;">convert</th>`;
 
   let rows = '';
   patients.forEach(p => {
@@ -2617,6 +2636,7 @@ function renderStatusGrid(patients, statusMap) {
     const nhi = escHtml(p.nhi_number || '');
     const name = escHtml((p.family_name || '') + ', ' + (p.given_names || ''));
     let cells = '';
+    let fhirButtons = '';
     events.forEach(ev => {
       const insts = evInsts[ev.unique_event_name] || instrumentsByEvent[ev.unique_event_name] || [];
       if (!insts.length) return;
@@ -2627,13 +2647,24 @@ function renderStatusGrid(patients, statusMap) {
           ${renderStatusCell(val, p.patient_id, ev.unique_event_name, inst)}
         </td>`;
       });
+      // Show a convert button for this event if any instrument has data
+      const hasData = Object.values(evCompletion).some(v => v !== null);
+      if (hasData) {
+        fhirButtons += `<button id="fhir-btn-${escHtml(p.patient_id)}-${escHtml(ev.unique_event_name)}"
+          class="btn btn-sm" style="display:block;width:100%;margin-bottom:2px;font-size:11px;background:var(--fhir-light);color:var(--fhir-orange);border-color:var(--fhir-orange);"
+          onclick="convertEventToFhir('${escHtml(p.patient_id)}','${escHtml(ev.unique_event_name)}',this)">
+          ${escHtml(ev.event_label)} →
+        </button>`;
+      }
     });
+    if (!fhirButtons) fhirButtons = '<span style="color:var(--muted);font-size:11px;">—</span>';
     rows += `<tr>
       <td style="font-family:monospace;font-size:12px;padding:6px 8px;">
         <button class="btn btn-secondary btn-sm" style="font-family:monospace;font-size:11px;" onclick="openPatientTimeline('${p.patient_id}','${p.nhi_number || ''}',this)">${nhi}</button>
       </td>
       <td style="font-size:12px;padding:6px 8px;">${name}</td>
       ${cells}
+      <td style="border-left:2px solid var(--border);padding:4px 8px;vertical-align:top;">${fhirButtons}</td>
     </tr>`;
   });
 
@@ -3020,6 +3051,31 @@ async function deleteEventConfirm(eventId) {
     await loadProjectSetup();
   } catch(e) {
     alert('Failed to delete event: ' + e.message);
+  }
+}
+
+async function convertEventToFhir(patientId, eventName, btn) {
+  const origHTML = btn.innerHTML;
+  btn.textContent = '...';
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/patients/${encodeURIComponent(patientId)}/events/${encodeURIComponent(eventName)}/convert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || JSON.stringify(e)); }
+    const result = await r.json();
+    btn.textContent = `✓ ${result.resource_count} resources`;
+    btn.style.background = 'var(--success)';
+    btn.style.color = 'white';
+    btn.style.borderColor = 'var(--success)';
+    btn.disabled = false;
+    btn.onclick = () => { showPage('page-fhir'); loadFhirIndex(); };
+    btn.title = `Bundle ID: ${result.bundle_id}`;
+  } catch(e) {
+    btn.innerHTML = origHTML;
+    btn.disabled = false;
+    showToast('Convert failed: ' + e.message, 'error');
   }
 }
 

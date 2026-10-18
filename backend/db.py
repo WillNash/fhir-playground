@@ -1530,6 +1530,60 @@ def get_instrument_audit_log(re_id: str) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Event record assembly (re_id-backed → dict for FHIR conversion)
+# ---------------------------------------------------------------------------
+
+def get_event_record(patient_id: str, event_name: str) -> dict[str, Any] | None:
+    """Assemble a full record dict from re_id-backed EAV data.
+
+    Returns the same shape as _assemble_record so clinical_record_to_fhir_bundle
+    can consume it directly.  encounter_date / encounter_type are None unless the
+    user filled the 'encounter' instrument (in which case they are set via the EAV
+    loop inside _assemble_record).
+    Returns None if the patient or event_name is unknown, or if no record_events
+    row exists for this (patient, event) pair yet.
+    """
+    with _db_conn() as conn:
+        p_row = conn.execute(
+            "SELECT * FROM patients WHERE patient_id=?", (patient_id,)
+        ).fetchone()
+        if not p_row:
+            return None
+
+        ev = conn.execute(
+            "SELECT event_id FROM events WHERE unique_event_name=?", (event_name,)
+        ).fetchone()
+        if not ev:
+            return None
+
+        re_row = conn.execute(
+            "SELECT re_id, created_at, updated_at FROM record_events "
+            "WHERE patient_id=? AND event_id=?",
+            (patient_id, ev["event_id"]),
+        ).fetchone()
+        if not re_row:
+            return None
+
+        eav_rows = conn.execute(
+            "SELECT field_name, value, instance FROM redcap_data WHERE re_id=?",
+            (re_row["re_id"],),
+        ).fetchall()
+
+    synthetic_encounter: dict[str, Any] = {
+        "record_id":         re_row["re_id"],
+        "patient_id":        patient_id,
+        "encounter_date":    None,
+        "encounter_type":    None,
+        "redcap_event_name": event_name,
+        "fhir_bundle_id":    None,
+        "is_deleted":        0,
+        "created_at":        re_row["created_at"],
+        "updated_at":        re_row["updated_at"],
+    }
+    return _assemble_record(p_row, synthetic_encounter, eav_rows)
+
+
+# ---------------------------------------------------------------------------
 # Event management CRUD
 # ---------------------------------------------------------------------------
 
@@ -1654,6 +1708,7 @@ __all__ = [
     "list_instrument_event_map",
     "set_instrument_event_map",
     "get_instrument_audit_log",
+    "get_event_record",
     "list_events",
     "create_event",
     "update_event",

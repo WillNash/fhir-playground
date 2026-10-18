@@ -52,6 +52,7 @@ from .db import (
     delete_patient,
     delete_record,
     get_audit_log,
+    get_event_record,
     get_instrument_audit_log,
     get_instrument_data,
     get_or_create_record_event,
@@ -513,6 +514,39 @@ async def get_instrument_audit_handler(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return get_instrument_audit_log(re_id)
+
+
+@app.post("/api/patients/{patient_id}/events/{event_name}/convert")
+async def convert_event_to_fhir(patient_id: str, event_name: str) -> dict[str, Any]:
+    """Convert all instrument data for a patient at a given event into a FHIR Bundle."""
+    if not get_patient(patient_id):
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    rec = get_event_record(patient_id, event_name)
+    if not rec:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No data recorded for patient {patient_id!r} at event {event_name!r}",
+        )
+
+    bundle: dict[str, Any] = clinical_record_to_fhir_bundle(rec)
+
+    bundle_id = save_resource(bundle, record_id=rec["record_id"])
+    for entry in bundle.get("entry", []):
+        resource: dict[str, Any] = entry.get("resource", {})
+        if resource and resource.get("resourceType") != "Bundle":
+            save_resource(resource, record_id=rec["record_id"])
+
+    hapi_result = await _post_bundle_to_hapi(bundle)
+
+    return {
+        "bundle_id": bundle_id,
+        "resource_count": len(bundle.get("entry", [])),
+        "patient_id": get_patient_id_from_bundle(bundle),
+        "event_name": event_name,
+        "hapi": hapi_result,
+        "bundle": bundle,
+    }
 
 
 # ---------------------------------------------------------------------------
