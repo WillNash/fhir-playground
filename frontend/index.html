@@ -872,57 +872,47 @@ async function loadRefData() {
 }
 
 function populateDropdowns() {
-  // Conditions
-  const cs = document.getElementById('cond_code');
-  Object.entries(refData.conditions).forEach(([code, display]) => {
-    const o = document.createElement('option');
-    o.value = code; o.textContent = `${display} (${code})`; cs.appendChild(o);
-  });
+  function fillSelect(id, entries, toOption) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    entries.forEach(entry => { el.appendChild(toOption(entry)); });
+  }
 
-  // Medications
-  const ms = document.getElementById('med_code');
-  Object.entries(refData.medications).forEach(([code, info]) => {
+  fillSelect('cond_code', Object.entries(refData.conditions), ([code, display]) => {
     const o = document.createElement('option');
-    o.value = code; o.textContent = `${info.name} ${info.strength} (${code})`; ms.appendChild(o);
+    o.value = code; o.textContent = `${display} (${code})`; return o;
   });
-
-  // Allergens
-  const as = document.getElementById('allergy_code');
-  Object.entries(refData.allergens).forEach(([code, display]) => {
+  fillSelect('med_code', Object.entries(refData.medications), ([code, info]) => {
     const o = document.createElement('option');
-    o.value = `${code}|${display}`; o.textContent = display; as.appendChild(o);
+    o.value = code; o.textContent = `${info.name} ${info.strength} (${code})`; return o;
   });
-
-  // Labs
-  const ls = document.getElementById('lab_code');
-  Object.entries(refData.loinc).forEach(([code, info]) => {
+  fillSelect('allergy_code', Object.entries(refData.allergens), ([code, display]) => {
     const o = document.createElement('option');
-    o.value = code; o.textContent = `${info.display} (${code})`; ls.appendChild(o);
+    o.value = `${code}|${display}`; o.textContent = display; return o;
   });
-  document.getElementById('lab_code').addEventListener('change', function() {
-    const info = refData.loinc[this.value];
-    document.getElementById('lab_unit').value = info ? (info.unit || '') : '';
-  });
-
-  // Smoking
-  const smk = document.getElementById('smoking_code');
-  Object.entries(refData.smoking).forEach(([code, display]) => {
+  fillSelect('lab_code', Object.entries(refData.loinc), ([code, info]) => {
     const o = document.createElement('option');
-    o.value = `${code}|${display}`; o.textContent = display; smk.appendChild(o);
+    o.value = code; o.textContent = `${info.display} (${code})`; return o;
   });
-
-  // Alcohol (just code, no display suffix)
-  const alc = document.getElementById('alcohol_code');
-  Object.entries(refData.alcohol).forEach(([code, display]) => {
+  const labSel = document.getElementById('lab_code');
+  if (labSel) {
+    labSel.addEventListener('change', function() {
+      const info = refData.loinc[this.value];
+      const unitEl = document.getElementById('lab_unit');
+      if (unitEl) unitEl.value = info ? (info.unit || '') : '';
+    });
+  }
+  fillSelect('smoking_code', Object.entries(refData.smoking), ([code, display]) => {
     const o = document.createElement('option');
-    o.value = code; o.textContent = display; alc.appendChild(o);
+    o.value = `${code}|${display}`; o.textContent = display; return o;
   });
-
-  // Regions
-  const reg = document.getElementById('addr_region');
-  refData.regions.forEach(r => {
+  fillSelect('alcohol_code', Object.entries(refData.alcohol), ([code, display]) => {
     const o = document.createElement('option');
-    o.value = r; o.textContent = r; reg.appendChild(o);
+    o.value = code; o.textContent = display; return o;
+  });
+  fillSelect('addr_region', refData.regions, r => {
+    const o = document.createElement('option');
+    o.value = r; o.textContent = r; return o;
   });
 
   // Events selector
@@ -940,6 +930,7 @@ function populateDropdowns() {
 
   // Ethnicity checkboxes
   const ethContainer = document.getElementById('ethnicity-container');
+  if (!ethContainer) return;
   ethContainer.innerHTML = '';
   Object.entries(refData.ethnicity).forEach(([code, display]) => {
     const btn = document.createElement('button');
