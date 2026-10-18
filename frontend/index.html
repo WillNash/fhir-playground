@@ -1008,7 +1008,8 @@ function removeEthnicity(code) {
 // BMI auto-calculate
 // ============================================================
 ['v_weight','v_height'].forEach(id => {
-  document.getElementById(id).addEventListener('input', calcBMI);
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('input', calcBMI);
 });
 function calcBMI() {
   const w = parseFloat(document.getElementById('v_weight').value);
