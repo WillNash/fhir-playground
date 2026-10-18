@@ -474,6 +474,34 @@ async def get_instrument_handler(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+def _patient_updates_from_instrument(instrument: str, fields: dict[str, str | None]) -> dict[str, Any]:
+    """Extract patients-table columns from EAV field submissions for patient-level instruments."""
+    updates: dict[str, Any] = {}
+    if instrument == "demographics":
+        _DEMO_COLS = {
+            "nhi_number", "family_name", "given_names", "date_of_birth",
+            "sex", "gender_identity", "sex_at_birth", "phone", "email",
+        }
+        for key, val in fields.items():
+            col = key.removeprefix("demographics.")
+            if col in _DEMO_COLS and val is not None and val != "":
+                updates[col] = val
+    elif instrument == "address":
+        addr: dict[str, str | None] = {}
+        for key, val in fields.items():
+            sub = key.removeprefix("address.")
+            if sub in {"street", "suburb", "city", "postcode", "region"}:
+                addr[sub] = val or None
+        if addr:
+            updates["address"] = addr
+    elif instrument == "gp":
+        for key, val in fields.items():
+            col = key.removeprefix("gp.")
+            if col in {"gp_name", "gp_practice", "pho"}:
+                updates[col] = val or None
+    return updates
+
+
 @app.post("/api/patients/{patient_id}/events/{event_name}/instruments/{instrument}")
 async def upsert_instrument_handler(
     patient_id: str, event_name: str, instrument: str, body: InstrumentSubmission
@@ -481,12 +509,21 @@ async def upsert_instrument_handler(
     if not get_patient(patient_id):
         raise HTTPException(status_code=404, detail="Patient not found")
     try:
-        return upsert_instrument_data(
+        result = upsert_instrument_data(
             patient_id, event_name, instrument,
             body.fields, body.completion_status, body.instance,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+    # Sync patient-level instruments back to the patients table so that
+    # assembled records and FHIR exports reflect the latest demographics.
+    if instrument in {"demographics", "address", "gp"}:
+        patient_updates = _patient_updates_from_instrument(instrument, body.fields)
+        if patient_updates:
+            update_patient(patient_id, patient_updates)
+
+    return result
 
 
 @app.get("/api/instrument-event-map")

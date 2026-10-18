@@ -2609,8 +2609,8 @@ function renderStatusGrid(patients, statusMap) {
   const events = sample.events || [];
   const instrumentsByEvent = sample.instruments_by_event || {};
 
-  let headerRow1 = '<th style="min-width:90px;">NHI</th><th style="min-width:140px;">Name</th>';
-  let headerRow2 = '<th></th><th></th>';
+  let headerRow1 = '<th style="min-width:90px;">NHI</th><th style="min-width:140px;">Name</th><th></th>';
+  let headerRow2 = '<th></th><th></th><th style="font-size:10px;font-weight:400;color:var(--muted);padding:2px 4px;">edit</th>';
   events.forEach(ev => {
     const insts = instrumentsByEvent[ev.unique_event_name] || [];
     if (!insts.length) return;
@@ -2658,12 +2658,19 @@ function renderStatusGrid(patients, statusMap) {
       }
     });
     if (!fhirCells) fhirCells = '<span style="color:var(--muted);font-size:11px;">—</span>';
+    // Find the first event that has the demographics instrument assigned
+    const demoEvent = events.find(ev => (evInsts[ev.unique_event_name] || []).includes('demographics'));
+    const demoEventName = demoEvent ? demoEvent.unique_event_name : (events[0] ? events[0].unique_event_name : '');
     rows += `<tr>
       <td style="font-family:monospace;font-size:12px;padding:6px 8px;">
         <span class="nhi-link" data-patient="${p.patient_id}" data-nhi="${escHtml(p.nhi_number || '')}"
           style="cursor:pointer;color:var(--nz-teal);text-decoration:underline;font-size:11px;">${nhi}</span>
       </td>
       <td style="font-size:12px;padding:6px 8px;">${name}</td>
+      <td style="padding:4px 6px;">
+        <span class="status-clickable" data-patient="${p.patient_id}" data-event="${demoEventName}" data-instrument="demographics"
+          style="font-size:11px;color:var(--nz-teal);cursor:pointer;white-space:nowrap;" title="Edit patient demographics">✎ Edit</span>
+      </td>
       ${cells}
       <td style="border-left:2px solid var(--border);padding:4px 8px;vertical-align:top;">${fhirCells}</td>
     </tr>`;
