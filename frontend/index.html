@@ -433,28 +433,30 @@ pre.fhir-json {
 
 <!-- ===== INSTRUMENT DATA ENTRY ===== -->
 <main class="page" id="page-instrument">
-  <div class="card">
-    <div class="card-header" style="display:flex;gap:12px;align-items:center;">
-      <button class="btn btn-secondary btn-sm" onclick="showPage('page-status')">← Back</button>
-      <div>
-        <div id="instrument-breadcrumb" style="font-size:12px;color:var(--muted);"></div>
-        <h2 id="instrument-page-title" style="margin:0;font-size:16px;"></h2>
-      </div>
+  <!-- Context banner — makes it clear this is a data-entry form, not the dashboard -->
+  <div id="instrument-context-banner" style="background:var(--nz-dark);color:white;padding:10px 20px;border-radius:var(--radius) var(--radius) 0 0;display:flex;align-items:center;gap:12px;margin-bottom:0;">
+    <button class="btn btn-sm" onclick="showPage('page-status')" style="background:rgba(255,255,255,.15);color:white;border-color:rgba(255,255,255,.3);">← Record Status</button>
+    <div style="flex:1;">
+      <div id="instrument-breadcrumb" style="font-size:11px;opacity:.7;"></div>
+      <div id="instrument-page-title" style="font-size:16px;font-weight:600;"></div>
     </div>
+    <div id="instrument-context-meta" style="font-size:12px;opacity:.7;text-align:right;"></div>
+  </div>
+  <div class="card" style="border-radius:0 0 var(--radius) var(--radius);">
     <div class="card-body">
-      <div id="instrument-form-fields"></div>
-      <div class="form-group" style="margin-top:16px;">
-        <label>Completion Status</label>
-        <select id="instrument-completion-status">
-          <option value="">— Not saved (grey) —</option>
+      <div id="instrument-form-fields" class="form-grid"></div>
+      <div class="form-group" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
+        <label>Form Status <span style="font-size:11px;color:var(--muted);font-weight:400;">(REDCap completion status — sets the circle colour)</span></label>
+        <select id="instrument-completion-status" style="max-width:280px;">
+          <option value="">— Incomplete / not started (grey) —</option>
           <option value="0">Incomplete (red)</option>
           <option value="1">Unverified (yellow)</option>
           <option value="2">Complete (green)</option>
         </select>
       </div>
     </div>
-    <div class="card-footer" style="display:flex;gap:8px;align-items:center;padding:12px 20px;">
-      <button class="btn btn-primary" onclick="submitInstrumentForm()">Save</button>
+    <div class="card-footer" style="display:flex;gap:8px;align-items:center;">
+      <button class="btn btn-primary" onclick="submitInstrumentForm()">Save &amp; return</button>
       <button class="btn btn-secondary" onclick="showPage('page-status')">Cancel</button>
       <span id="instrument-save-status" style="font-size:12px;color:var(--muted);margin-left:8px;"></span>
     </div>
@@ -2643,7 +2645,7 @@ function renderStatusGrid(patients, statusMap) {
       const evCompletion = (completion[ev.unique_event_name]) || {};
       insts.forEach((inst, i) => {
         const val = evCompletion[inst] !== undefined ? evCompletion[inst] : null;
-        cells += `<td style="text-align:center;padding:4px 6px;${i===0?'border-left:2px solid var(--border)':''}">
+        cells += `<td style="text-align:center;padding:0;${i===0?'border-left:2px solid var(--border)':''}">
           ${renderStatusCell(val, p.patient_id, ev.unique_event_name, inst)}
         </td>`;
       });
@@ -2686,8 +2688,11 @@ function renderStatusCell(completionValue, patientId, eventName, instrumentName)
               : completionValue === '1' ? 'Unverified'
               : completionValue === '0' ? 'Incomplete'
               : 'Not started';
-  return `<span class="status-cell ${cls}" title="${escHtml(instrumentName)}: ${title}"
-    onclick="openInstrumentForm('${escHtml(patientId)}','${escHtml(eventName)}','${escHtml(instrumentName)}')"></span>`;
+  return `<button style="background:none;border:none;cursor:pointer;width:100%;padding:6px;display:flex;justify-content:center;align-items:center;"
+    title="${escHtml(instrumentName)}: ${title} — click to enter data"
+    onclick="openInstrumentForm('${escHtml(patientId)}','${escHtml(eventName)}','${escHtml(instrumentName)}')">
+    <span class="status-cell ${cls}"></span>
+  </button>`;
 }
 
 async function openPatientTimeline(patientId, nhi, btn) {
@@ -2744,12 +2749,25 @@ async function openPatientTimeline(patientId, nhi, btn) {
 // ============================================================
 async function openInstrumentForm(patientId, eventName, instrument) {
   currentInstrumentCtx = { patientId, eventName, instrument };
-  const titleEl = document.getElementById('instrument-page-title');
-  const breadcrumbEl = document.getElementById('instrument-breadcrumb');
-  const statusEl = document.getElementById('instrument-save-status');
-  if (statusEl) statusEl.textContent = '';
 
-  // Get patient info for breadcrumb
+  // Navigate immediately so the user sees the page changed
+  const titleEl  = document.getElementById('instrument-page-title');
+  const breadEl  = document.getElementById('instrument-breadcrumb');
+  const metaEl   = document.getElementById('instrument-context-meta');
+  const statusEl = document.getElementById('instrument-save-status');
+  const fieldsEl = document.getElementById('instrument-form-fields');
+  const compEl   = document.getElementById('instrument-completion-status');
+
+  if (statusEl) statusEl.textContent = '';
+  if (fieldsEl) fieldsEl.innerHTML = '<div style="padding:24px;color:var(--muted);">Loading…</div>';
+  const instrumentLabel = instrument.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  if (titleEl)  titleEl.textContent  = instrumentLabel;
+  if (breadEl)  breadEl.textContent  = '…';
+  if (metaEl)   metaEl.textContent   = '';
+  if (compEl)   compEl.value = '';
+  showPage('page-instrument');  // navigate NOW — before any async work
+
+  // Then load data in the background
   let patientLabel = patientId;
   try {
     const p = await apiGet('/api/patients/' + patientId);
@@ -2757,29 +2775,21 @@ async function openInstrumentForm(patientId, eventName, instrument) {
     currentInstrumentCtx.patientLabel = patientLabel;
   } catch(e) {}
 
-  // Get human-readable event label
   const evObj = (refData.events || []).find(e => e.unique_event_name === eventName);
   const eventLabel = evObj ? evObj.event_label : eventName;
 
-  // Get instrument label from data dictionary
+  if (breadEl) breadEl.textContent = `${patientLabel} › ${eventLabel}`;
+  if (metaEl)  metaEl.textContent  = eventName;
+
   const dictFields = (refData.dataDictionary || []).filter(f => f.form_name === instrument);
-  const instrumentLabel = instrument.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-  if (breadcrumbEl) breadcrumbEl.textContent = `Project > ${patientLabel} > ${eventLabel}`;
-  if (titleEl) titleEl.textContent = instrumentLabel;
-
-  // Fetch existing data
   let existingData = { fields: {}, completion_status: null };
   try {
     existingData = await apiGet(`/api/patients/${patientId}/events/${encodeURIComponent(eventName)}/instruments/${encodeURIComponent(instrument)}`);
   } catch(e) {}
 
-  // Set completion status dropdown
-  const compEl = document.getElementById('instrument-completion-status');
   if (compEl) compEl.value = existingData.completion_status || '';
-
   renderInstrumentFields(instrument, dictFields, existingData.fields || {});
-  showPage('page-instrument');
 }
 
 function renderInstrumentFields(instrument, dictFields, existingFields) {
@@ -2793,7 +2803,11 @@ function renderInstrumentFields(instrument, dictFields, existingFields) {
 
   let html = '';
   dictFields.forEach(f => {
-    const fieldKey = f.form_name + '.' + f.variable_field_name;
+    // Use variable_field_name as the EAV key directly — it already contains the prefix
+    // for dotted fields (e.g. "vitals.systolic_bp"). For plain fields (e.g. "encounter_date")
+    // we prefix with form_name so the backend can filter by instrument.
+    const vfn = f.variable_field_name;
+    const fieldKey = vfn.includes('.') ? vfn : f.form_name + '.' + vfn;
     const val = existingFields[fieldKey] !== undefined ? escHtml(String(existingFields[fieldKey] || '')) : '';
     const label = escHtml(f.field_label || f.variable_field_name);
     const ftype = f.field_type || 'text';

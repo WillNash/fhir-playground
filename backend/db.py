@@ -649,6 +649,10 @@ def _assemble_record(
             result["vitals"][rest] = _coerce_value(fn, raw)
         elif prefix == "social_history":
             result["social_history"][rest] = _coerce_value(fn, raw)
+        elif prefix == "encounter":
+            # encounter instrument fields: encounter_date, encounter_type, etc.
+            # EAV copy wins over synthetic encounter row (which has None for re_id path)
+            result[rest] = _coerce_value(fn, raw)
         elif prefix in _REPEATING and instance > 0:
             # instance=0 means non-repeating; instance>=1 means repeating
             grp = repeating_groups[prefix]
