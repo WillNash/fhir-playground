@@ -57,6 +57,11 @@ a:hover { text-decoration: underline; }
 }
 .nav-btn:hover, .nav-btn.active { background: rgba(255,255,255,.15); color: white; }
 .nav-btn.active { font-weight: 600; }
+.status-cell { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(0,0,0,0.1); cursor: pointer; display:inline-block; vertical-align:middle; }
+.status-grey   { background: #9CA3AF; }
+.status-red    { background: #EF4444; }
+.status-yellow { background: #F59E0B; }
+.status-green  { background: #10B981; }
 .header-stats { font-size: 12px; color: rgba(255,255,255,.6); margin-left: 16px; padding-left: 16px; border-left: 1px solid rgba(255,255,255,.2); white-space: nowrap; }
 
 /* Page container */
@@ -293,8 +298,7 @@ pre.fhir-json {
   </div>
   <nav class="header-nav">
     <button class="nav-btn active" onclick="showPage('page-home')">Dashboard</button>
-    <button class="nav-btn" onclick="showPage('page-records'); loadRecords()">Patient Records</button>
-    <button class="nav-btn" onclick="showPage('page-form')">Quick Entry</button>
+    <button class="nav-btn" onclick="showPage('page-status'); loadRecordStatusDashboard()">Record Status</button>
     <button class="nav-btn" onclick="showPage('page-fhir'); loadFhirIndex()">FHIR Store</button>
     <button class="nav-btn" onclick="showPage('page-dict'); loadDataDictionary()">Data Dict</button>
     <span id="hapi-nav-badge" style="font-size:11px;padding:2px 7px;border-radius:10px;background:rgba(255,255,255,.15);color:rgba(255,255,255,.7);cursor:default;" title="HAPI FHIR Server">HAPI ···</span>
@@ -328,8 +332,8 @@ pre.fhir-json {
         <div style="font-size:36px;font-weight:800;color:var(--nz-teal);" id="stat-records">—</div>
         <div style="color:var(--muted);margin-top:4px;">Patient encounter records stored</div>
         <div style="margin-top:16px;">
-          <button class="btn btn-primary" onclick="showPage('page-records');loadRecords();openAddPatientModal()">Add Patient</button>
-          <button class="btn btn-secondary" onclick="showPage('page-records');loadRecords()">View Patients</button>
+          <button class="btn btn-primary" onclick="showPage('page-status');loadRecordStatusDashboard();openAddPatientModal()">Add Patient</button>
+          <button class="btn btn-secondary" onclick="showPage('page-status');loadRecordStatusDashboard()">View Patients</button>
         </div>
       </div>
     </div>
@@ -408,567 +412,50 @@ pre.fhir-json {
   </div>
 </main>
 
-<!-- ===== NEW ENCOUNTER FORM ===== -->
-<main class="page" id="page-form">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
-    <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">New Patient Encounter</h1>
-    <span style="color:var(--muted);font-size:13px;">All fields marked <span style="color:var(--danger)">*</span> are required</span>
+<!-- ===== RECORD STATUS DASHBOARD ===== -->
+<main class="page" id="page-status">
+  <div class="card">
+    <div class="card-header">
+      <h2>Record Status Dashboard</h2>
+      <div style="display:flex;gap:8px;align-items:center;margin-left:auto;">
+        <input id="status-search-nhi" type="text" placeholder="NHI" style="width:120px;"/>
+        <input id="status-search-name" type="text" placeholder="Family name" style="width:160px;"/>
+        <button class="btn btn-primary btn-sm" onclick="loadRecordStatusDashboard()">Load</button>
+        <button class="btn btn-secondary btn-sm" onclick="openAddPatientModal()">+ Add Patient</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div id="status-grid" style="overflow-x:auto;"></div>
+    </div>
   </div>
-
-  <div id="form-alert"></div>
-
-  <form id="encounter-form" onsubmit="return false;">
-
-    <!-- === PATIENT DEMOGRAPHICS === -->
-    <div class="collapsible" id="sec-demo">
-      <div class="collapsible-header open" onclick="toggleSection('sec-demo')">
-        <span style="font-size:16px;">👤</span>
-        <h3>Patient Demographics</h3>
-        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-      <div class="collapsible-body">
-        <div class="form-grid">
-          <div class="form-group">
-            <label>NHI Number <span style="color:var(--danger)">*</span> <span title="National Health Index — required to link encounters to a patient">ℹ</span></label>
-            <input type="text" id="nhi_number" placeholder="e.g. ZAA0001" maxlength="7" required pattern="[A-HJ-NP-Za-hj-np-z]{3}([0-9]{4}|[0-9]{2}[A-HJ-NP-Za-hj-np-z]{2})" title="NZ NHI: 3 letters (A–Z excl. I/O) + 4 digits (legacy, e.g. ZAA0001) or + 2 digits + 2 letters (new format, e.g. ZZZ00AB)" style="font-family:monospace;text-transform:uppercase;" autocomplete="off"/>
-          </div>
-          <div class="form-group">
-            <label>Family Name <span class="req">*</span></label>
-            <input type="text" id="family_name" placeholder="Smith" required/>
-          </div>
-          <div class="form-group">
-            <label>Given Names <span class="req">*</span></label>
-            <input type="text" id="given_names" placeholder="John William" required/>
-          </div>
-          <div class="form-group">
-            <label>Date of Birth <span class="req">*</span></label>
-            <input type="date" id="date_of_birth" required/>
-          </div>
-          <div class="form-group">
-            <label>Sex <span class="req">*</span></label>
-            <select id="sex" required>
-              <option value="">Select...</option>
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-              <option value="other">Other / Indeterminate</option>
-              <option value="unknown">Unknown / Unspecified</option>
-            </select>
-          </div>
-          <div class="form-group" id="branch-gender-identity">
-            <label>Gender Identity</label>
-            <input type="text" id="gender_identity" placeholder="e.g. Transgender woman"/>
-          </div>
-          <div class="form-group" id="branch-sex-at-birth">
-            <label>Sex at Birth</label>
-            <select id="sex_at_birth">
-              <option value="">Not recorded</option>
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-              <option value="other">Other / Indeterminate</option>
-              <option value="unknown">Unknown</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="section-title" style="margin-top:16px;">Ethnicity (NZ Stats Level 4 — select all that apply)</div>
-        <div id="ethnicity-container" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;"></div>
-        <div id="ethnicity-selected" class="chip-list" style="margin-top:8px;"></div>
-
-        <div class="section-title" style="margin-top:16px;">Contact Details</div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Phone</label>
-            <input type="tel" id="phone" placeholder="021 123 4567"/>
-          </div>
-          <div class="form-group">
-            <label>Email</label>
-            <input type="email" id="email" placeholder="john.smith@example.com"/>
-          </div>
-        </div>
-
-        <div class="section-title" style="margin-top:16px;">Address (NZ)</div>
-        <div class="form-grid">
-          <div class="form-group span-2">
-            <label>Street Address</label>
-            <input type="text" id="addr_street" placeholder="123 Main Street"/>
-          </div>
-          <div class="form-group">
-            <label>Suburb</label>
-            <input type="text" id="addr_suburb" placeholder="Ponsonby"/>
-          </div>
-          <div class="form-group">
-            <label>City</label>
-            <input type="text" id="addr_city" placeholder="Auckland"/>
-          </div>
-          <div class="form-group">
-            <label>Postcode</label>
-            <input type="text" id="addr_postcode" placeholder="1011" maxlength="4"/>
-          </div>
-          <div class="form-group">
-            <label>Region</label>
-            <select id="addr_region">
-              <option value="">Select region...</option>
-            </select>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- === GP / PRACTICE === -->
-    <div class="collapsible" id="sec-gp">
-      <div class="collapsible-header" onclick="toggleSection('sec-gp')">
-        <span style="font-size:16px;">🏪</span>
-        <h3>GP / PHO Details</h3>
-        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-      <div class="collapsible-body hidden">
-        <div class="form-grid">
-          <div class="form-group">
-            <label>GP Name</label>
-            <input type="text" id="gp_name" placeholder="Dr. Jane Wilson"/>
-          </div>
-          <div class="form-group">
-            <label>Practice Name</label>
-            <input type="text" id="gp_practice" placeholder="City Medical Centre"/>
-          </div>
-          <div class="form-group">
-            <label>PHO</label>
-            <input type="text" id="pho" placeholder="ProCare PHO"/>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- === ENCOUNTER === -->
-    <div class="collapsible" id="sec-enc">
-      <div class="collapsible-header open" onclick="toggleSection('sec-enc')">
-        <span style="font-size:16px;">📋</span>
-        <h3>Encounter Details</h3>
-        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-      <div class="collapsible-body">
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Encounter Date <span class="req">*</span></label>
-            <input type="date" id="encounter_date" required/>
-          </div>
-          <div class="form-group">
-            <label>Encounter Type <span class="req">*</span></label>
-            <select id="encounter_type" required>
-              <option value="ambulatory">Ambulatory / Outpatient</option>
-              <option value="inpatient">Inpatient</option>
-              <option value="emergency">Emergency</option>
-              <option value="telehealth">Telehealth</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Visit / Event</label>
-            <select id="redcap_event">
-              <option value="baseline_arm_1">Baseline</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Clinician Name</label>
-            <input type="text" id="clinician_name" placeholder="Dr. Sarah Lee"/>
-          </div>
-          <div class="form-group">
-            <label>Clinician Role</label>
-            <select id="clinician_role">
-              <option value="GP">General Practitioner</option>
-              <option value="NP">Nurse Practitioner</option>
-              <option value="RN">Registered Nurse</option>
-              <option value="SMO">Senior Medical Officer</option>
-              <option value="HO">House Officer</option>
-              <option value="Physio">Physiotherapist</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-          <div class="form-group span-2">
-            <label>Presenting Complaint</label>
-            <textarea id="presenting_complaint" rows="2" placeholder="e.g. Chest tightness and shortness of breath for 2 days..."></textarea>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- === VITAL SIGNS === -->
-    <div class="collapsible" id="sec-vitals">
-      <div class="collapsible-header" onclick="toggleSection('sec-vitals')">
-        <span style="font-size:16px;">❤️</span>
-        <h3>Vital Signs</h3>
-        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-      <div class="collapsible-body hidden">
-        <div class="vitals-grid">
-          <div class="form-group">
-            <label>Systolic BP (mmHg)</label>
-            <input type="number" id="v_sbp" placeholder="120" min="50" max="300" step="1"/>
-          </div>
-          <div class="form-group">
-            <label>Diastolic BP (mmHg)</label>
-            <input type="number" id="v_dbp" placeholder="80" min="30" max="200" step="1"/>
-          </div>
-          <div class="form-group">
-            <label>Heart Rate (bpm)</label>
-            <input type="number" id="v_hr" placeholder="72" min="20" max="300" step="1"/>
-          </div>
-          <div class="form-group">
-            <label>Resp Rate (/min)</label>
-            <input type="number" id="v_rr" placeholder="16" min="4" max="60" step="1"/>
-          </div>
-          <div class="form-group">
-            <label>Temperature (°C)</label>
-            <input type="number" id="v_temp" placeholder="37.0" min="32" max="42" step="0.1"/>
-          </div>
-          <div class="form-group">
-            <label>SpO2 (%)</label>
-            <input type="number" id="v_spo2" placeholder="98" min="50" max="100" step="1"/>
-          </div>
-          <div class="form-group">
-            <label>Weight (kg)</label>
-            <input type="number" id="v_weight" placeholder="70" min="1" max="500" step="0.1"/>
-          </div>
-          <div class="form-group">
-            <label>Height (cm)</label>
-            <input type="number" id="v_height" placeholder="170" min="30" max="300" step="0.5"/>
-          </div>
-          <div class="form-group">
-            <label>BMI (auto)</label>
-            <input type="number" id="v_bmi" placeholder="24.2" readonly/>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- === CONDITIONS === -->
-    <div class="collapsible" id="sec-cond">
-      <div class="collapsible-header" onclick="toggleSection('sec-cond')">
-        <span style="font-size:16px;">🩺</span>
-        <h3>Conditions / Problem List</h3>
-        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-      <div class="collapsible-body hidden">
-        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;">
-          <div class="form-group" style="flex:2">
-            <label>Condition (SNOMED-CT)</label>
-            <select id="cond_code">
-              <option value="">Select condition...</option>
-            </select>
-          </div>
-          <div class="form-group" style="flex:1">
-            <label>Status</label>
-            <select id="cond_status">
-              <option value="active">Active</option>
-              <option value="resolved">Resolved</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
-          <div class="form-group" style="flex:1">
-            <label>Onset Date</label>
-            <input type="date" id="cond_onset"/>
-          </div>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="addCondition()" style="margin-bottom:1px;">+ Add</button>
-        </div>
-        <div id="conditions-list" class="chip-list"></div>
-      </div>
-    </div>
-
-    <!-- === MEDICATIONS === -->
-    <div class="collapsible" id="sec-meds">
-      <div class="collapsible-header" onclick="toggleSection('sec-meds')">
-        <span style="font-size:16px;">💊</span>
-        <h3>Medications</h3>
-        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-      <div class="collapsible-body hidden">
-        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap;">
-          <div class="form-group" style="flex:2;min-width:200px;">
-            <label>Medication (SNOMED / NZMT)</label>
-            <select id="med_code">
-              <option value="">Select medication...</option>
-            </select>
-          </div>
-          <div class="form-group" style="flex:1;min-width:100px;">
-            <label>Dose</label>
-            <input type="text" id="med_dose" placeholder="500mg"/>
-          </div>
-          <div class="form-group" style="flex:1;min-width:100px;">
-            <label>Frequency</label>
-            <select id="med_freq">
-              <option value="">Select...</option>
-              <option>Once daily</option>
-              <option>Twice daily</option>
-              <option>Three times daily</option>
-              <option>Four times daily</option>
-              <option>As required</option>
-              <option>Weekly</option>
-              <option>Fortnightly</option>
-              <option>Monthly</option>
-            </select>
-          </div>
-          <div class="form-group" style="flex:1;min-width:80px;">
-            <label>Route</label>
-            <select id="med_route">
-              <option value="">Select...</option>
-              <option>Oral</option>
-              <option>Inhaled</option>
-              <option>Topical</option>
-              <option>IV</option>
-              <option>IM</option>
-              <option>SC</option>
-              <option>Sublingual</option>
-              <option>Rectal</option>
-              <option>Nasal</option>
-              <option>Ophthalmic</option>
-            </select>
-          </div>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="addMedication()" style="margin-bottom:1px;">+ Add</button>
-        </div>
-        <div id="medications-list" class="chip-list"></div>
-      </div>
-    </div>
-
-    <!-- === ALLERGIES === -->
-    <div class="collapsible" id="sec-allergy">
-      <div class="collapsible-header" onclick="toggleSection('sec-allergy')">
-        <span style="font-size:16px;">⚠️</span>
-        <h3>Allergies & Intolerances</h3>
-        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-      <div class="collapsible-body hidden">
-        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap;">
-          <div class="form-group" style="flex:2;min-width:180px;">
-            <label>Allergen (SNOMED-CT)</label>
-            <select id="allergy_code">
-              <option value="">Select allergen...</option>
-            </select>
-          </div>
-          <div class="form-group" style="flex:1;min-width:120px;">
-            <label>Reaction</label>
-            <input type="text" id="allergy_reaction" placeholder="e.g. Urticaria"/>
-          </div>
-          <div class="form-group" style="flex:1;min-width:100px;">
-            <label>Severity</label>
-            <select id="allergy_severity">
-              <option value="">Unknown</option>
-              <option value="mild">Mild</option>
-              <option value="moderate">Moderate</option>
-              <option value="severe">Severe</option>
-            </select>
-          </div>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="addAllergy()" style="margin-bottom:1px;">+ Add</button>
-        </div>
-        <div id="allergies-list" class="chip-list"></div>
-      </div>
-    </div>
-
-    <!-- === LAB RESULTS === -->
-    <div class="collapsible" id="sec-labs">
-      <div class="collapsible-header" onclick="toggleSection('sec-labs')">
-        <span style="font-size:16px;">🧪</span>
-        <h3>Laboratory Results</h3>
-        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-      <div class="collapsible-body hidden">
-        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap;">
-          <div class="form-group" style="flex:2;min-width:200px;">
-            <label>Test (LOINC)</label>
-            <select id="lab_code">
-              <option value="">Select test...</option>
-            </select>
-          </div>
-          <div class="form-group" style="min-width:90px;">
-            <label>Value</label>
-            <input type="number" id="lab_value" placeholder="0.0" step="any"/>
-          </div>
-          <div class="form-group" style="min-width:80px;">
-            <label>Unit</label>
-            <input type="text" id="lab_unit" placeholder="mmol/L" readonly/>
-          </div>
-          <div class="form-group" style="min-width:80px;">
-            <label>Flag</label>
-            <select id="lab_flag">
-              <option value="">Normal</option>
-              <option value="H">H (High)</option>
-              <option value="L">L (Low)</option>
-              <option value="HH">HH (Critical High)</option>
-              <option value="LL">LL (Critical Low)</option>
-            </select>
-          </div>
-          <div class="form-group" style="min-width:130px;">
-            <label>Collected Date</label>
-            <input type="date" id="lab_date"/>
-          </div>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="addLab()" style="margin-bottom:1px;">+ Add</button>
-        </div>
-        <div id="labs-list" class="chip-list"></div>
-      </div>
-    </div>
-
-    <!-- === IMMUNIZATIONS === -->
-    <div class="collapsible" id="sec-imm">
-      <div class="collapsible-header" onclick="toggleSection('sec-imm')">
-        <span style="font-size:16px;">💉</span>
-        <h3>Immunizations</h3>
-        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-      <div class="collapsible-body hidden">
-        <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap;">
-          <div class="form-group" style="flex:2;min-width:200px;">
-            <label>Vaccine</label>
-            <select id="imm_code">
-              <option value="">Select vaccine...</option>
-              <option value="33879002|Influenza vaccine">Influenza (annual flu)</option>
-              <option value="28523008|COVID-19 vaccine">COVID-19 vaccine</option>
-              <option value="407737004|Pneumococcal vaccine">Pneumococcal (Prevenar)</option>
-              <option value="860591000000103|Shingles vaccine">Shingles (Shingrix)</option>
-              <option value="82622004|BCG vaccine">BCG (Tuberculosis)</option>
-              <option value="407614003|MMR vaccine">MMR (Measles/Mumps/Rubella)</option>
-              <option value="125691004|Hepatitis B vaccine">Hepatitis B</option>
-              <option value="14745005|DTaP vaccine">DTaP (Diphtheria/Tetanus/Pertussis)</option>
-              <option value="449999000|HPV vaccine">HPV (Gardasil 9)</option>
-            </select>
-          </div>
-          <div class="form-group" style="min-width:130px;">
-            <label>Date Given</label>
-            <input type="date" id="imm_date"/>
-          </div>
-          <div class="form-group" style="min-width:120px;">
-            <label>Site</label>
-            <select id="imm_site">
-              <option value="">Select...</option>
-              <option>Left deltoid</option>
-              <option>Right deltoid</option>
-              <option>Left thigh</option>
-              <option>Right thigh</option>
-              <option>Left gluteal</option>
-              <option>Oral</option>
-              <option>Intranasal</option>
-            </select>
-          </div>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="addImmunization()" style="margin-bottom:1px;">+ Add</button>
-        </div>
-        <div id="immunizations-list" class="chip-list"></div>
-      </div>
-    </div>
-
-    <!-- === SOCIAL HISTORY === -->
-    <div class="collapsible" id="sec-social">
-      <div class="collapsible-header" onclick="toggleSection('sec-social')">
-        <span style="font-size:16px;">🌿</span>
-        <h3>Social History</h3>
-        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-      <div class="collapsible-body hidden">
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Smoking Status (SNOMED-CT)</label>
-            <select id="smoking_code">
-              <option value="">Not recorded</option>
-            </select>
-          </div>
-          <div class="form-group" id="branch-pack-years">
-            <label>Pack Years</label>
-            <input type="number" id="pack_years" placeholder="10" min="0" step="0.5"/>
-          </div>
-          <div class="form-group">
-            <label>Alcohol Use</label>
-            <select id="alcohol_code">
-              <option value="">Not recorded</option>
-            </select>
-          </div>
-          <div class="form-group" id="branch-alcohol-units">
-            <label>Alcohol units/week</label>
-            <input type="number" id="alcohol_units" placeholder="0" min="0" step="1"/>
-          </div>
-          <div class="form-group">
-            <label>Occupation</label>
-            <input type="text" id="occupation" placeholder="Teacher"/>
-          </div>
-          <div class="form-group">
-            <label>Lives Alone</label>
-            <select id="lives_alone">
-              <option value="">Unknown</option>
-              <option value="true">Yes</option>
-              <option value="false">No</option>
-            </select>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- === CLINICAL NOTES === -->
-    <div class="collapsible" id="sec-notes">
-      <div class="collapsible-header" onclick="toggleSection('sec-notes')">
-        <span style="font-size:16px;">📝</span>
-        <h3>Clinical Notes</h3>
-        <svg class="caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </div>
-      <div class="collapsible-body hidden">
-        <div class="two-col">
-          <div class="form-group">
-            <label>Examination Findings</label>
-            <textarea id="note_exam" rows="4" placeholder="General appearance, systems review..."></textarea>
-          </div>
-          <div class="form-group">
-            <label>Assessment & Plan</label>
-            <textarea id="note_plan" rows="4" placeholder="Impression, management plan, follow-up..."></textarea>
-          </div>
-        </div>
-        <div class="form-group" style="margin-top:12px;">
-          <label>Other Notes</label>
-          <textarea id="note_other" rows="3" placeholder="Additional clinical information..."></textarea>
-        </div>
-      </div>
-    </div>
-
-    <!-- Submit -->
-    <div style="display:flex;gap:12px;padding:16px 0;align-items:center;">
-      <button type="button" class="btn btn-primary" onclick="submitRecord()" id="submit-btn">
-        Save Encounter Record
-      </button>
-      <button type="button" class="btn btn-secondary" onclick="resetForm()">Clear Form</button>
-      <span id="submit-spinner" style="display:none;"><span class="spinner"></span></span>
-    </div>
-
-  </form>
 </main>
 
-<!-- ===== RECORDS LIST ===== -->
-<main class="page" id="page-records">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
-    <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">Patient Records</h1>
-    <div style="display:flex;gap:8px;margin-left:auto;">
-      <button id="view-pat-btn" class="btn btn-secondary btn-sm" onclick="switchRecordView('patient')">Patient View</button>
-      <button id="view-enc-btn" class="btn btn-secondary btn-sm" onclick="switchRecordView('encounter')">Encounter View</button>
-    </div>
-  </div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;align-items:center;">
-    <input type="text" id="search-family" placeholder="Search by surname..." style="max-width:200px;"/>
-    <input type="text" id="search-nhi" placeholder="NHI number..." style="max-width:140px;font-family:monospace;"/>
-    <input type="date" id="search-date" style="max-width:160px;" class="enc-view-only" title="Filter by encounter date (Encounter View only)"/>
-    <button class="btn btn-secondary btn-sm" onclick="loadRecords()">Search</button>
-    <button class="btn btn-primary btn-sm" onclick="openAddPatientModal()">+ Add Patient</button>
-  </div>
-
+<!-- ===== INSTRUMENT DATA ENTRY ===== -->
+<main class="page" id="page-instrument">
   <div class="card">
-    <div class="table-wrap">
-      <table id="records-table">
-        <thead>
-          <tr>
-            <th>NHI</th>
-            <th>Patient</th>
-            <th>DOB</th>
-            <th>Sex</th>
-            <th>Encounters</th>
-            <th>Last Visit</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="records-tbody">
-          <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
-        </tbody>
-      </table>
+    <div class="card-header" style="display:flex;gap:12px;align-items:center;">
+      <button class="btn btn-secondary btn-sm" onclick="showPage('page-status')">← Back</button>
+      <div>
+        <div id="instrument-breadcrumb" style="font-size:12px;color:var(--muted);"></div>
+        <h2 id="instrument-page-title" style="margin:0;font-size:16px;"></h2>
+      </div>
+    </div>
+    <div class="card-body">
+      <div id="instrument-form-fields"></div>
+      <div class="form-group" style="margin-top:16px;">
+        <label>Completion Status</label>
+        <select id="instrument-completion-status">
+          <option value="">— Not saved (grey) —</option>
+          <option value="0">Incomplete (red)</option>
+          <option value="1">Unverified (yellow)</option>
+          <option value="2">Complete (green)</option>
+        </select>
+      </div>
+    </div>
+    <div class="card-footer" style="display:flex;gap:8px;align-items:center;padding:12px 20px;">
+      <button class="btn btn-primary" onclick="submitInstrumentForm()">Save</button>
+      <button class="btn btn-secondary" onclick="showPage('page-status')">Cancel</button>
+      <span id="instrument-save-status" style="font-size:12px;color:var(--muted);margin-left:8px;"></span>
     </div>
   </div>
 </main>
@@ -1150,6 +637,15 @@ pre.fhir-json {
       </table>
     </div>
   </div>
+  <details style="margin-top:24px;" id="iem-details">
+    <summary style="cursor:pointer;font-weight:600;padding:8px 0;user-select:none;">Instrument-Event Designations</summary>
+    <div style="margin-top:12px;">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+        Define which instruments are designated to which events (REDCap "Designate Instruments for My Events" matrix).
+      </p>
+      <div id="iem-matrix"></div>
+    </div>
+  </details>
 </main>
 
 </div><!-- /app-shell -->
@@ -1203,10 +699,9 @@ function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-  const map = { 'page-home':'Dashboard', 'page-form':'Quick Entry', 'page-records':'Patient Records', 'page-fhir':'FHIR Store', 'page-dict':'Data Dict' };
+  const map = { 'page-home':'Dashboard', 'page-status':'Record Status', 'page-instrument':'Data Entry', 'page-fhir':'FHIR Store', 'page-dict':'Data Dict' };
   document.querySelectorAll('.nav-btn').forEach(b => { if(b.textContent.trim() === map[id]) b.classList.add('active'); });
   loadStats();
-  if (id === 'page-dict') loadDataDictionary();
 }
 
 // ============================================================
@@ -1656,7 +1151,7 @@ async function deletePatient(patientId) {
   try {
     const r = await fetch(`/api/patients/${patientId}`, { method: 'DELETE' });
     if (!r.ok && r.status !== 204) throw new Error(await r.text());
-    loadRecords();
+    loadRecordStatusDashboard();
     showToast('Patient deleted.');
   } catch(e) { alert('Delete failed: ' + e.message); }
 }
@@ -1831,7 +1326,7 @@ async function submitAddPatient() {
     const r = await fetch('/api/patients', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
     if (!r.ok) { const e = await r.json(); errEl.textContent = JSON.stringify(e.detail||e); return; }
     closeModal();
-    loadRecords();
+    loadRecordStatusDashboard();
     showToast('Patient registered.');
   } catch(e) { errEl.textContent = e.message; }
 }
@@ -1856,7 +1351,7 @@ async function submitUpdatePatient(patientId) {
     const r = await fetch(`/api/patients/${patientId}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) });
     if (!r.ok) { const e = await r.json(); if(errEl) errEl.textContent = JSON.stringify(e.detail||e); return; }
     closeModal();
-    loadRecords();
+    loadRecordStatusDashboard();
     showToast('Demographics updated.');
   } catch(e) { if(errEl) errEl.textContent = e.message; }
 }
@@ -2089,6 +1584,7 @@ async function loadDataDictionary() {
         <tr><td><strong>${c.code}</strong></td><td>${c.label}</td></tr>
       `).join('');
     }
+    loadInstrumentEventMap();
   } catch(e) {
     tbody.innerHTML = `<tr><td colspan="8" style="color:var(--danger);padding:16px;">Error: ${e.message}</td></tr>`;
   }
@@ -2375,7 +1871,6 @@ async function loadRecords() {
           </td>
           <td style="white-space:nowrap;">
             <button class="btn btn-info btn-sm" onclick="openViewDemographicsModal('${p.patient_id}')">Demographics</button>
-            <button class="btn btn-primary btn-sm" onclick="openAddEncounterModal('${p.patient_id}','${p.nhi_number || ''}','${nameEsc}')">Add Encounter</button>
             <button class="btn btn-secondary btn-sm" onclick="togglePatientTimeline('${p.patient_id}', '${p.nhi_number || ''}', this)">Timeline</button>
             <button class="btn btn-danger btn-sm" onclick="deletePatient('${p.patient_id}')">Del</button>
           </td>
@@ -2976,9 +2471,9 @@ function summariseResource(r) {
 window.addEventListener('DOMContentLoaded', () => {
   // Default dates
   const today = new Date().toISOString().slice(0,10);
-  document.getElementById('encounter_date').value = today;
-  document.getElementById('lab_date').value = today;
-  document.getElementById('imm_date').value = today;
+  const edEl = document.getElementById('encounter_date'); if (edEl) edEl.value = today;
+  const ldEl = document.getElementById('lab_date'); if (ldEl) ldEl.value = today;
+  const idEl = document.getElementById('imm_date'); if (idEl) idEl.value = today;
 
   // Attach missing data code buttons (must happen before loadRefData so BMI listeners are untouched)
   ['v_sbp','v_dbp','v_hr','v_rr','v_temp','v_spo2','v_weight','v_height','v_bmi','pack_years','alcohol_units'].forEach(attachMissingButton);
@@ -2989,6 +2484,358 @@ window.addEventListener('DOMContentLoaded', () => {
   refreshHapiStatus();
   hapiStatusTimer = setInterval(refreshHapiStatus, 15000);
 });
+
+// ============================================================
+// Record Status Dashboard
+// ============================================================
+let currentInstrumentCtx = { patientId: null, eventName: null, instrument: null, patientLabel: null };
+
+async function loadRecordStatusDashboard() {
+  const nhi = (document.getElementById('status-search-nhi') || {}).value || '';
+  const name = (document.getElementById('status-search-name') || {}).value || '';
+  const grid = document.getElementById('status-grid');
+  if (!grid) return;
+  grid.innerHTML = '<div style="color:var(--muted);padding:16px;">Loading...</div>';
+  try {
+    const params = new URLSearchParams({ limit: 50 });
+    if (nhi) params.set('nhi', nhi);
+    if (name) params.set('family_name', name);
+    const patients = await apiGet('/api/patients?' + params);
+    if (!patients.length) {
+      grid.innerHTML = '<div style="color:var(--muted);padding:16px;">No patients found.</div>';
+      return;
+    }
+    const statuses = await Promise.all(patients.map(p =>
+      apiGet('/api/patients/' + p.patient_id + '/record-status').catch(() => null)
+    ));
+    const statusMap = {};
+    patients.forEach((p, i) => { statusMap[p.patient_id] = statuses[i]; });
+    renderStatusGrid(patients, statusMap);
+  } catch(e) {
+    grid.innerHTML = '<div style="color:var(--danger);padding:16px;">Error: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function renderStatusGrid(patients, statusMap) {
+  const grid = document.getElementById('status-grid');
+  if (!patients.length) { grid.innerHTML = '<div style="color:var(--muted);padding:16px;">No patients.</div>'; return; }
+
+  // Use first patient's status to get event/instrument structure
+  const sample = statusMap[patients[0].patient_id];
+  if (!sample) { grid.innerHTML = '<div style="color:var(--muted);padding:16px;">No status data.</div>'; return; }
+
+  const events = sample.events || [];
+  const instrumentsByEvent = sample.instruments_by_event || {};
+
+  // Build header rows
+  let headerRow1 = '<th style="min-width:90px;">NHI</th><th style="min-width:140px;">Name</th>';
+  let headerRow2 = '<th></th><th></th>';
+  events.forEach(ev => {
+    const insts = instrumentsByEvent[ev.unique_event_name] || [];
+    if (!insts.length) return;
+    headerRow1 += `<th colspan="${insts.length}" style="text-align:center;border-left:2px solid var(--border);padding:4px 8px;font-size:12px;">${escHtml(ev.event_label)}</th>`;
+    insts.forEach((inst, i) => {
+      headerRow2 += `<th style="font-size:10px;font-weight:400;color:var(--muted);white-space:nowrap;padding:2px 4px;${i===0?'border-left:2px solid var(--border)':''}">${escHtml(inst)}</th>`;
+    });
+  });
+
+  let rows = '';
+  patients.forEach(p => {
+    const st = statusMap[p.patient_id] || {};
+    const completion = st.completion || {};
+    const evInsts = st.instruments_by_event || instrumentsByEvent;
+    const nhi = escHtml(p.nhi_number || '');
+    const name = escHtml((p.family_name || '') + ', ' + (p.given_names || ''));
+    let cells = '';
+    events.forEach(ev => {
+      const insts = evInsts[ev.unique_event_name] || instrumentsByEvent[ev.unique_event_name] || [];
+      if (!insts.length) return;
+      const evCompletion = (completion[ev.unique_event_name]) || {};
+      insts.forEach((inst, i) => {
+        const val = evCompletion[inst] !== undefined ? evCompletion[inst] : null;
+        cells += `<td style="text-align:center;padding:4px 6px;${i===0?'border-left:2px solid var(--border)':''}">
+          ${renderStatusCell(val, p.patient_id, ev.unique_event_name, inst)}
+        </td>`;
+      });
+    });
+    rows += `<tr>
+      <td style="font-family:monospace;font-size:12px;padding:6px 8px;">
+        <button class="btn btn-secondary btn-sm" style="font-family:monospace;font-size:11px;" onclick="openPatientTimeline('${p.patient_id}','${p.nhi_number || ''}',this)">${nhi}</button>
+      </td>
+      <td style="font-size:12px;padding:6px 8px;">${name}</td>
+      ${cells}
+    </tr>`;
+  });
+
+  grid.innerHTML = `<table style="border-collapse:collapse;width:100%;font-size:12px;">
+    <thead>
+      <tr style="background:#f8fafc;">${headerRow1}</tr>
+      <tr style="background:#f8fafc;">${headerRow2}</tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function renderStatusCell(completionValue, patientId, eventName, instrumentName) {
+  const cls = completionValue === '2' ? 'status-green'
+            : completionValue === '1' ? 'status-yellow'
+            : completionValue === '0' ? 'status-red'
+            : 'status-grey';
+  const title = completionValue === '2' ? 'Complete'
+              : completionValue === '1' ? 'Unverified'
+              : completionValue === '0' ? 'Incomplete'
+              : 'Not started';
+  return `<span class="status-cell ${cls}" title="${escHtml(instrumentName)}: ${title}"
+    onclick="openInstrumentForm('${escHtml(patientId)}','${escHtml(eventName)}','${escHtml(instrumentName)}')"></span>`;
+}
+
+async function openPatientTimeline(patientId, nhi, btn) {
+  const existingRow = document.getElementById('timeline-' + patientId);
+  if (existingRow) {
+    existingRow.remove();
+    return;
+  }
+  const origText = btn.textContent;
+  btn.textContent = '...';
+  try {
+    const records = await apiGet('/api/records?nhi=' + encodeURIComponent(nhi) + '&limit=100');
+    const tr = document.createElement('tr');
+    tr.id = 'timeline-' + patientId;
+    const colCount = btn.closest('tr') ? btn.closest('tr').querySelectorAll('td').length : 10;
+    const td = document.createElement('td');
+    td.colSpan = colCount;
+    td.style.cssText = 'background:#f8fafc;padding:0 24px 12px 24px;';
+    if (!records.length) {
+      td.innerHTML = '<div style="color:var(--muted);padding:8px 0;font-size:12px;">No encounter records found.</div>';
+    } else {
+      const rowsHtml = records.map(r => `
+        <tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px 10px;font-size:12px;">${escHtml(r.redcap_event_name || 'baseline_arm_1')}</td>
+          <td style="padding:6px 10px;font-size:12px;">${escHtml(r.encounter_date || '—')}</td>
+          <td style="padding:6px 10px;font-size:12px;">${escHtml(r.encounter_type || '—')}</td>
+          <td style="padding:6px 10px;font-size:12px;">
+            <button class="btn btn-secondary btn-sm" onclick="viewRecord('${r.record_id}')">View</button>
+            <button class="btn btn-fhir btn-sm" onclick="convertRecord('${r.record_id}', this)">FHIR</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteRecord('${r.record_id}')">Del</button>
+          </td>
+        </tr>`).join('');
+      td.innerHTML = `<table style="width:100%;font-size:12px;border-collapse:collapse;margin-top:8px;">
+        <thead><tr style="font-weight:700;color:var(--muted);">
+          <th style="padding:4px 10px;text-align:left;">Event</th>
+          <th style="padding:4px 10px;text-align:left;">Date</th>
+          <th style="padding:4px 10px;text-align:left;">Type</th>
+          <th style="padding:4px 10px;text-align:left;">Actions</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>`;
+    }
+    tr.appendChild(td);
+    btn.closest('tr').insertAdjacentElement('afterend', tr);
+    btn.textContent = origText;
+  } catch(e) {
+    btn.textContent = origText;
+    console.error(e);
+  }
+}
+
+// ============================================================
+// Instrument data entry
+// ============================================================
+async function openInstrumentForm(patientId, eventName, instrument) {
+  currentInstrumentCtx = { patientId, eventName, instrument };
+  const titleEl = document.getElementById('instrument-page-title');
+  const breadcrumbEl = document.getElementById('instrument-breadcrumb');
+  const statusEl = document.getElementById('instrument-save-status');
+  if (statusEl) statusEl.textContent = '';
+
+  // Get patient info for breadcrumb
+  let patientLabel = patientId;
+  try {
+    const p = await apiGet('/api/patients/' + patientId);
+    patientLabel = (p.nhi_number || '') + ' ' + (p.family_name || '') + ', ' + (p.given_names || '');
+    currentInstrumentCtx.patientLabel = patientLabel;
+  } catch(e) {}
+
+  // Get human-readable event label
+  const evObj = (refData.events || []).find(e => e.unique_event_name === eventName);
+  const eventLabel = evObj ? evObj.event_label : eventName;
+
+  // Get instrument label from data dictionary
+  const dictFields = (refData.dataDictionary || []).filter(f => f.form_name === instrument);
+  const instrumentLabel = instrument.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  if (breadcrumbEl) breadcrumbEl.textContent = `Project > ${patientLabel} > ${eventLabel}`;
+  if (titleEl) titleEl.textContent = instrumentLabel;
+
+  // Fetch existing data
+  let existingData = { fields: {}, completion_status: null };
+  try {
+    existingData = await apiGet(`/api/patients/${patientId}/events/${encodeURIComponent(eventName)}/instruments/${encodeURIComponent(instrument)}`);
+  } catch(e) {}
+
+  // Set completion status dropdown
+  const compEl = document.getElementById('instrument-completion-status');
+  if (compEl) compEl.value = existingData.completion_status || '';
+
+  renderInstrumentFields(instrument, dictFields, existingData.fields || {});
+  showPage('page-instrument');
+}
+
+function renderInstrumentFields(instrument, dictFields, existingFields) {
+  const container = document.getElementById('instrument-form-fields');
+  if (!container) return;
+
+  if (!dictFields.length) {
+    container.innerHTML = '<div style="color:var(--muted);padding:16px;">No fields defined for this instrument.</div>';
+    return;
+  }
+
+  let html = '';
+  dictFields.forEach(f => {
+    const fieldKey = f.form_name + '.' + f.variable_field_name;
+    const val = existingFields[fieldKey] !== undefined ? escHtml(String(existingFields[fieldKey] || '')) : '';
+    const label = escHtml(f.field_label || f.variable_field_name);
+    const ftype = f.field_type || 'text';
+
+    html += `<div class="form-group">
+      <label for="inst-field-${escHtml(f.variable_field_name)}">${label}</label>`;
+
+    if (ftype === 'notes' || ftype === 'textarea') {
+      html += `<textarea id="inst-field-${escHtml(f.variable_field_name)}" name="${escHtml(fieldKey)}" rows="3">${val}</textarea>`;
+    } else if (ftype === 'dropdown' || ftype === 'select') {
+      const choices = parseChoices(f.choices_calculations_slider_labels || '');
+      html += `<select id="inst-field-${escHtml(f.variable_field_name)}" name="${escHtml(fieldKey)}">
+        <option value="">— Select —</option>
+        ${choices.map(([v, l]) => `<option value="${escHtml(v)}" ${val===v?'selected':''}>${escHtml(l)}</option>`).join('')}
+      </select>`;
+    } else if (ftype === 'radio') {
+      const choices = parseChoices(f.choices_calculations_slider_labels || '');
+      html += `<div style="display:flex;flex-wrap:wrap;gap:12px;padding-top:4px;">
+        ${choices.map(([v, l]) => `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+          <input type="radio" name="${escHtml(fieldKey)}" value="${escHtml(v)}" ${val===v?'checked':''}/> ${escHtml(l)}
+        </label>`).join('')}
+      </div>`;
+    } else if (ftype === 'checkbox') {
+      const choices = parseChoices(f.choices_calculations_slider_labels || '');
+      html += `<div style="display:flex;flex-wrap:wrap;gap:12px;padding-top:4px;">
+        ${choices.map(([v, l]) => `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+          <input type="checkbox" name="${escHtml(fieldKey)}" value="${escHtml(v)}" ${val.includes(v)?'checked':''}/> ${escHtml(l)}
+        </label>`).join('')}
+      </div>`;
+    } else {
+      const inputType = ftype === 'date' ? 'date' : ftype === 'integer' || ftype === 'number' ? 'number' : 'text';
+      html += `<input type="${inputType}" id="inst-field-${escHtml(f.variable_field_name)}" name="${escHtml(fieldKey)}" value="${val}"/>`;
+    }
+
+    html += `</div>`;
+  });
+  container.innerHTML = html;
+}
+
+function parseChoices(raw) {
+  // REDCap choices format: "1, Label 1 | 2, Label 2"
+  if (!raw) return [];
+  return raw.split('|').map(part => {
+    const idx = part.indexOf(',');
+    if (idx < 0) return [part.trim(), part.trim()];
+    return [part.slice(0, idx).trim(), part.slice(idx + 1).trim()];
+  }).filter(([v]) => v);
+}
+
+async function submitInstrumentForm() {
+  const { patientId, eventName, instrument } = currentInstrumentCtx;
+  if (!patientId) return;
+
+  const container = document.getElementById('instrument-form-fields');
+  const statusEl = document.getElementById('instrument-save-status');
+  const compEl = document.getElementById('instrument-completion-status');
+  if (statusEl) statusEl.textContent = 'Saving...';
+
+  // Collect field values
+  const fields = {};
+  if (container) {
+    container.querySelectorAll('input[name], select[name], textarea[name]').forEach(el => {
+      if (el.type === 'radio' && !el.checked) return;
+      if (el.type === 'checkbox') {
+        if (el.checked) {
+          fields[el.name] = (fields[el.name] ? fields[el.name] + ',' : '') + el.value;
+        }
+        return;
+      }
+      if (el.value !== '') fields[el.name] = el.value;
+    });
+  }
+
+  const completionStatus = compEl && compEl.value ? compEl.value : null;
+
+  try {
+    await fetch(`/api/patients/${patientId}/events/${encodeURIComponent(eventName)}/instruments/${encodeURIComponent(instrument)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields, completion_status: completionStatus, instance: 0 }),
+    }).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(JSON.stringify(e.detail || e)); }); return r.json(); });
+    if (statusEl) statusEl.textContent = '✓ Saved';
+    showPage('page-status');
+    loadRecordStatusDashboard();
+  } catch(e) {
+    if (statusEl) statusEl.textContent = 'Error: ' + e.message;
+  }
+}
+
+// ============================================================
+// Instrument-Event Designation Matrix
+// ============================================================
+async function loadInstrumentEventMap() {
+  const matrixEl = document.getElementById('iem-matrix');
+  if (!matrixEl) return;
+  try {
+    const mapData = await apiGet('/api/instrument-event-map');
+    // Get distinct instruments from data dictionary
+    const instruments = [...new Set((refData.dataDictionary || []).map(f => f.form_name))].filter(Boolean);
+    const events = refData.events || [];
+    renderInstrumentEventMatrix(mapData, instruments, events);
+  } catch(e) {
+    if (matrixEl) matrixEl.innerHTML = '<div style="color:var(--danger);font-size:12px;">Error loading IEM: ' + escHtml(e.message) + '</div>';
+  }
+}
+
+function renderInstrumentEventMatrix(mapData, instruments, events) {
+  const matrixEl = document.getElementById('iem-matrix');
+  if (!matrixEl) return;
+
+  // Build set of enabled (event_id, form_name) pairs
+  const enabled = new Set(mapData.map(r => r.event_id + '|' + r.form_name));
+
+  let headerCols = events.map(e => `<th style="font-size:11px;padding:4px 8px;">${escHtml(e.event_label)}</th>`).join('');
+  let rows = instruments.map(inst => {
+    const cells = events.map(ev => {
+      const checked = enabled.has(ev.event_id + '|' + inst) ? 'checked' : '';
+      return `<td style="text-align:center;padding:4px 8px;">
+        <input type="checkbox" ${checked} onchange="toggleInstrumentEvent(${ev.event_id},'${escHtml(inst)}',this.checked)" title="${escHtml(ev.event_label)} × ${escHtml(inst)}"/>
+      </td>`;
+    }).join('');
+    return `<tr><td style="font-size:12px;padding:4px 8px;font-family:monospace;">${escHtml(inst)}</td>${cells}</tr>`;
+  }).join('');
+
+  matrixEl.innerHTML = `<table style="border-collapse:collapse;font-size:12px;">
+    <thead><tr>
+      <th style="padding:4px 8px;text-align:left;">Instrument</th>${headerCols}
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+async function toggleInstrumentEvent(eventId, formName, enabled) {
+  try {
+    await fetch(`/api/instrument-event-map/${eventId}/${encodeURIComponent(formName)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+  } catch(e) {
+    console.error('IEM toggle failed:', e);
+  }
+}
 </script>
 </body>
 </html>

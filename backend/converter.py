@@ -314,7 +314,7 @@ def build_encounter(record: dict[str, Any], patient_id: str) -> dict[str, Any]: 
 def build_vitals(
     vitals_raw: dict[str, Any],  # Any: external JSON
     patient_id: str,
-    encounter_id: str,
+    encounter_id: str | None,
     encounter_date: str,
 ) -> list[dict[str, Any]]:
     """Build FHIR Observation resources for each vital sign recorded."""
@@ -325,7 +325,7 @@ def build_vitals(
     sbp = vitals_raw.get("systolic_bp")
     dbp = vitals_raw.get("diastolic_bp")
     if sbp is not None and dbp is not None and not _is_missing_code(sbp) and not _is_missing_code(dbp):
-        observations.append({
+        bp_obs: dict[str, Any] = {
             "resourceType": "Observation",
             "id": _uuid(),
             "meta": {"profile": ["http://hl7.org/fhir/StructureDefinition/bp"]},
@@ -337,7 +337,6 @@ def build_vitals(
                 "text": "Blood pressure",
             },
             "subject": _ref("Patient", patient_id),
-            "encounter": _ref("Encounter", encounter_id),
             "effectiveDateTime": encounter_date,
             "component": [
                 {
@@ -353,12 +352,15 @@ def build_vitals(
                                       "system": _SYS_UCUM, "code": "mm[Hg]"},
                 },
             ],
-        })
+        }
+        if encounter_id is not None:
+            bp_obs["encounter"] = _ref("Encounter", encounter_id)
+        observations.append(bp_obs)
 
     # SpO2 — dual-coded per FHIR R4 Vital Signs profile (primary 2708-6, supplementary 59408-5).
     spo2_val = vitals_raw.get("spo2")
     if spo2_val is not None and not _is_missing_code(spo2_val):
-        observations.append({
+        spo2_obs: dict[str, Any] = {
             "resourceType": "Observation",
             "id": _uuid(),
             "status": "final",
@@ -373,7 +375,6 @@ def build_vitals(
                 "text": "Oxygen saturation",
             },
             "subject": _ref("Patient", patient_id),
-            "encounter": _ref("Encounter", encounter_id),
             "effectiveDateTime": encounter_date,
             "valueQuantity": {
                 "value": spo2_val,
@@ -381,7 +382,10 @@ def build_vitals(
                 "system": _SYS_UCUM,
                 "code": "%",
             },
-        })
+        }
+        if encounter_id is not None:
+            spo2_obs["encounter"] = _ref("Encounter", encounter_id)
+        observations.append(spo2_obs)
 
     # Remaining individual vitals (BP components skipped — already handled above).
     skip_for_bp = {"systolic_bp", "diastolic_bp"}
@@ -392,7 +396,7 @@ def build_vitals(
         if value is None or _is_missing_code(value):
             continue
         obs_meta = OBSERVATIONS.get(loinc, {})
-        observations.append({
+        vital_obs: dict[str, Any] = {
             "resourceType": "Observation",
             "id": _uuid(),
             "status": "final",
@@ -403,7 +407,6 @@ def build_vitals(
                 "text": obs_meta.get("display", field),
             },
             "subject": _ref("Patient", patient_id),
-            "encounter": _ref("Encounter", encounter_id),
             "effectiveDateTime": encounter_date,
             "valueQuantity": {
                 "value": value,
@@ -411,7 +414,10 @@ def build_vitals(
                 "system": _SYS_UCUM,
                 "code": obs_meta.get("ucum", ""),
             },
-        })
+        }
+        if encounter_id is not None:
+            vital_obs["encounter"] = _ref("Encounter", encounter_id)
+        observations.append(vital_obs)
 
     return observations
 
@@ -419,7 +425,7 @@ def build_vitals(
 def build_lab_observation(
     lab: dict[str, Any],  # Any: external JSON
     patient_id: str,
-    encounter_id: str,
+    encounter_id: str | None,
 ) -> dict[str, Any]:
     loinc_code: str = lab.get("loinc_code", "")
     obs_meta = OBSERVATIONS.get(loinc_code, {})
@@ -440,9 +446,10 @@ def build_lab_observation(
             "text": obs_meta.get("display", loinc_code),
         },
         "subject": _ref("Patient", patient_id),
-        "encounter": _ref("Encounter", encounter_id),
         "effectiveDateTime": lab.get("collected_date", _today_nz()),
     }
+    if encounter_id is not None:
+        obs["encounter"] = _ref("Encounter", encounter_id)
 
     if value_is_missing:
         obs["dataAbsentReason"] = {
@@ -486,7 +493,7 @@ def build_lab_observation(
 def build_condition(
     cond: dict[str, Any],  # Any: external JSON
     patient_id: str,
-    encounter_id: str,
+    encounter_id: str | None,
 ) -> dict[str, Any]:
     clin_status = _coerce_status(cond.get("status"), _CONDITION_STATUSES)
 
@@ -512,8 +519,9 @@ def build_condition(
             "text": cond.get("display", ""),
         },
         "subject": _ref("Patient", patient_id),
-        "encounter": _ref("Encounter", encounter_id),
     }
+    if encounter_id is not None:
+        fhir_cond["encounter"] = _ref("Encounter", encounter_id)
 
     if cond.get("onset_date"):
         fhir_cond["onsetDateTime"] = cond["onset_date"]
@@ -526,7 +534,7 @@ def build_condition(
 def build_medication_statement(
     med: dict[str, Any],  # Any: external JSON
     patient_id: str,
-    encounter_id: str,
+    encounter_id: str | None,
 ) -> dict[str, Any]:
     fhir_status = _coerce_status(med.get("status"), _MEDICATION_STATUSES)
 
@@ -554,8 +562,9 @@ def build_medication_statement(
             "text": med.get("name", ""),
         },
         "subject": _ref("Patient", patient_id),
-        "context": _ref("Encounter", encounter_id),
     }
+    if encounter_id is not None:
+        stmt["context"] = _ref("Encounter", encounter_id)
 
     if med.get("start_date"):
         stmt["effectivePeriod"] = {"start": med["start_date"]}
@@ -614,7 +623,7 @@ def build_allergy(allergy: dict[str, Any], patient_id: str) -> dict[str, Any]:  
 def build_immunization(
     imm: dict[str, Any],  # Any: external JSON
     patient_id: str,
-    encounter_id: str,
+    encounter_id: str | None,
 ) -> dict[str, Any]:
     resource: dict[str, Any] = {
         "resourceType": "Immunization",
@@ -629,9 +638,10 @@ def build_immunization(
             "text": imm.get("vaccine_display", ""),
         },
         "patient": _ref("Patient", patient_id),
-        "encounter": _ref("Encounter", encounter_id),
         "occurrenceDateTime": imm.get("date_given", _today_nz()),
     }
+    if encounter_id is not None:
+        resource["encounter"] = _ref("Encounter", encounter_id)
     if imm.get("lot_number"):
         resource["lotNumber"] = imm["lot_number"]
     if imm.get("site"):
@@ -642,14 +652,14 @@ def build_immunization(
 def build_social_history_observations(
     social: dict[str, Any],  # Any: external JSON
     patient_id: str,
-    encounter_id: str,
+    encounter_id: str | None,
     encounter_date: str,
 ) -> list[dict[str, Any]]:
     obs_list: list[dict[str, Any]] = []
     category = _obs_category("social-history", "Social History")
 
     if social.get("smoking_status_code"):
-        obs_list.append({
+        smoking_obs: dict[str, Any] = {
             "resourceType": "Observation",
             "id": _uuid(),
             "status": "final",
@@ -657,17 +667,19 @@ def build_social_history_observations(
             "code": {"coding": [{"system": LOINC_SYSTEM, "code": "72166-2",
                                   "display": "Tobacco smoking status"}]},
             "subject": _ref("Patient", patient_id),
-            "encounter": _ref("Encounter", encounter_id),
             "effectiveDateTime": encounter_date,
             "valueCodeableConcept": {"coding": [{
                 "system": SNOMED_SYSTEM,
                 "code": social["smoking_status_code"],
                 "display": social.get("smoking_status_display", ""),
             }]},
-        })
+        }
+        if encounter_id is not None:
+            smoking_obs["encounter"] = _ref("Encounter", encounter_id)
+        obs_list.append(smoking_obs)
 
     if social.get("alcohol_units_per_week") is not None and not _is_missing_code(social.get("alcohol_units_per_week")):
-        obs_list.append({
+        alcohol_obs: dict[str, Any] = {
             "resourceType": "Observation",
             "id": _uuid(),
             "status": "final",
@@ -675,7 +687,6 @@ def build_social_history_observations(
             "code": {"coding": [{"system": LOINC_SYSTEM, "code": "74013-4",
                                   "display": "Alcoholic drinks per week"}]},
             "subject": _ref("Patient", patient_id),
-            "encounter": _ref("Encounter", encounter_id),
             "effectiveDateTime": encounter_date,
             "valueQuantity": {
                 "value": social["alcohol_units_per_week"],
@@ -683,7 +694,10 @@ def build_social_history_observations(
                 "system": _SYS_UCUM,
                 "code": "{drinks}/wk",
             },
-        })
+        }
+        if encounter_id is not None:
+            alcohol_obs["encounter"] = _ref("Encounter", encounter_id)
+        obs_list.append(alcohol_obs)
 
     return obs_list
 
@@ -691,7 +705,7 @@ def build_social_history_observations(
 def build_composition(
     record: dict[str, Any],  # Any: external JSON
     patient_id: str,
-    encounter_id: str,
+    encounter_id: str | None,
     section_entries: dict[str, list[dict[str, str]]],
 ) -> dict[str, Any]:
     notes: list[dict[str, Any]] = record.get("clinical_notes", [])
@@ -714,7 +728,7 @@ def build_composition(
             },
         })
 
-    return {
+    composition: dict[str, Any] = {
         "resourceType": "Composition",
         "id": _uuid(),
         "status": "final",
@@ -723,12 +737,14 @@ def build_composition(
             "text": "Clinical encounter note",
         },
         "subject": _ref("Patient", patient_id),
-        "encounter": _ref("Encounter", encounter_id),
         "date": _now_nz(),
         "author": [{"display": record.get("clinician_name", "Unknown")}],
         "title": f"Encounter note - {record.get('encounter_date', '')}",
         "section": sections,
     }
+    if encounter_id is not None:
+        composition["encounter"] = _ref("Encounter", encounter_id)
+    return composition
 
 
 # ---------------------------------------------------------------------------
@@ -757,11 +773,18 @@ def clinical_record_to_fhir_bundle(record: dict[str, Any]) -> dict[str, Any]:  #
     patient_id: str = patient["id"]
     entries.append(_entry(patient))
 
-    # Encounter
-    encounter = build_encounter(record, patient_id)
-    encounter_id: str = encounter["id"]
-    encounter_date: str = record.get("encounter_date", _today_nz())
-    entries.append(_entry(encounter))
+    # Encounter — only built when encounter_date is present
+    has_encounter = bool(record.get("encounter_date"))
+    encounter_id: str | None
+    encounter_date: str
+    if has_encounter:
+        encounter = build_encounter(record, patient_id)
+        encounter_id = encounter["id"]
+        encounter_date = record.get("encounter_date", _today_nz())
+        entries.append(_entry(encounter))
+    else:
+        encounter_id = None
+        encounter_date = _today_nz()
 
     # Track resources per section for the Composition index.
     section_entries: dict[str, list[dict[str, str]]] = {

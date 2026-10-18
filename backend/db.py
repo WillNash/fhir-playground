@@ -2,13 +2,15 @@
 SQLite persistence layer — EAV schema with longitudinal patient/encounter structure.
 
 Tables:
-  patients        — one row per unique patient (NHI = key)
-  arms            — REDCap study arms
-  events          — REDCap events (Baseline, Follow-up 1, …)
-  encounters      — one row per visit (FK → patients, FK → events)
-  redcap_data     — EAV rows: (record_id, field_name, value, instance)
-  audit_log       — append-only field-level change log
-  redcap_metadata — data dictionary (seeded from data_dictionary.py)
+  patients             — one row per unique patient (NHI = key)
+  arms                 — REDCap study arms
+  events               — REDCap events (Baseline, Follow-up 1, …)
+  record_events        — one row per (patient, event) tuple; non-encounter EAV anchor
+  encounters           — one row per clinical visit (FK → patients, FK → events)
+  instrument_event_map — many-to-many event↔instrument designation matrix
+  redcap_data          — EAV rows keyed by record_id (encounter) or re_id (record_event)
+  audit_log            — append-only field-level change log
+  redcap_metadata      — data dictionary (seeded from data_dictionary.py)
 
 The FHIR store is separate (fhir_store.py).
 """
@@ -150,13 +152,23 @@ def init_db() -> None:
                 event_order       INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS record_events (
+                re_id       TEXT PRIMARY KEY,
+                patient_id  TEXT NOT NULL REFERENCES patients(patient_id),
+                event_id    INTEGER NOT NULL REFERENCES events(event_id),
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL,
+                UNIQUE (patient_id, event_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_re_patient ON record_events(patient_id);
+
             CREATE TABLE IF NOT EXISTS encounters (
                 record_id         TEXT PRIMARY KEY,
                 patient_id        TEXT NOT NULL REFERENCES patients(patient_id),
                 event_id          INTEGER REFERENCES events(event_id),
                 redcap_event_name TEXT,
-                encounter_date    TEXT NOT NULL,
-                encounter_type    TEXT NOT NULL DEFAULT 'ambulatory',
+                encounter_date    TEXT,
+                encounter_type    TEXT,
                 fhir_bundle_id    TEXT,
                 is_deleted        INTEGER NOT NULL DEFAULT 0,
                 created_at        TEXT NOT NULL,
@@ -166,13 +178,21 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_enc_date    ON encounters(encounter_date);
             CREATE INDEX IF NOT EXISTS idx_enc_event   ON encounters(event_id);
 
+            CREATE TABLE IF NOT EXISTS instrument_event_map (
+                iem_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id  INTEGER NOT NULL REFERENCES events(event_id),
+                form_name TEXT NOT NULL,
+                UNIQUE (event_id, form_name)
+            );
+
             CREATE TABLE IF NOT EXISTS redcap_data (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                record_id  TEXT    NOT NULL REFERENCES encounters(record_id),
-                field_name TEXT    NOT NULL,
+                record_id  TEXT REFERENCES encounters(record_id),
+                re_id      TEXT REFERENCES record_events(re_id),
+                field_name TEXT NOT NULL,
                 value      TEXT,
                 instance   INTEGER NOT NULL DEFAULT 0,
-                UNIQUE (record_id, field_name, instance)
+                CHECK (record_id IS NOT NULL OR re_id IS NOT NULL)
             );
             CREATE INDEX IF NOT EXISTS idx_rd_record ON redcap_data(record_id);
 
@@ -285,6 +305,99 @@ def init_db() -> None:
             if col_name not in existing_cols:
                 conn.execute(f"ALTER TABLE patients ADD COLUMN {col_name} {col_type}")
 
+        # Migrate: add re_id column to redcap_data and replace UNIQUE constraint with partial indexes
+        rd_pragma = conn.execute("PRAGMA table_info(redcap_data)").fetchall()
+        rd_cols = {c["name"] for c in rd_pragma}
+        if "re_id" not in rd_cols:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.execute("""
+                CREATE TABLE redcap_data_v2 (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    record_id  TEXT REFERENCES encounters(record_id),
+                    re_id      TEXT REFERENCES record_events(re_id),
+                    field_name TEXT NOT NULL,
+                    value      TEXT,
+                    instance   INTEGER NOT NULL DEFAULT 0,
+                    CHECK (record_id IS NOT NULL OR re_id IS NOT NULL)
+                )
+            """)
+            conn.execute("""
+                INSERT INTO redcap_data_v2 (id, record_id, re_id, field_name, value, instance)
+                SELECT id, record_id, NULL, field_name, value, instance FROM redcap_data
+            """)
+            conn.execute("DROP TABLE redcap_data")
+            conn.execute("ALTER TABLE redcap_data_v2 RENAME TO redcap_data")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rd_record ON redcap_data(record_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_rd_re_id  ON redcap_data(re_id)")
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_rd_encounter
+                    ON redcap_data(record_id, field_name, instance)
+                    WHERE record_id IS NOT NULL
+            """)
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_rd_re
+                    ON redcap_data(re_id, field_name, instance)
+                    WHERE re_id IS NOT NULL
+            """)
+            conn.execute("PRAGMA foreign_keys=ON")
+
+        # Migrate: make encounters.encounter_date and encounter_type nullable
+        enc_pragma = conn.execute("PRAGMA table_info(encounters)").fetchall()
+        enc_date_col = next((c for c in enc_pragma if c["name"] == "encounter_date"), None)
+        if enc_date_col is not None and enc_date_col["notnull"] == 1:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.execute("""
+                CREATE TABLE encounters_v2 (
+                    record_id         TEXT PRIMARY KEY,
+                    patient_id        TEXT NOT NULL REFERENCES patients(patient_id),
+                    event_id          INTEGER REFERENCES events(event_id),
+                    redcap_event_name TEXT,
+                    encounter_date    TEXT,
+                    encounter_type    TEXT,
+                    fhir_bundle_id    TEXT,
+                    is_deleted        INTEGER NOT NULL DEFAULT 0,
+                    created_at        TEXT NOT NULL,
+                    updated_at        TEXT NOT NULL
+                )
+            """)
+            conn.execute("""
+                INSERT INTO encounters_v2
+                    (record_id, patient_id, event_id, redcap_event_name,
+                     encounter_date, encounter_type, fhir_bundle_id,
+                     is_deleted, created_at, updated_at)
+                SELECT record_id, patient_id, event_id, redcap_event_name,
+                       encounter_date, encounter_type, fhir_bundle_id,
+                       is_deleted, created_at, updated_at
+                FROM encounters
+            """)
+            conn.execute("DROP TABLE encounters")
+            conn.execute("ALTER TABLE encounters_v2 RENAME TO encounters")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_enc_patient ON encounters(patient_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_enc_date ON encounters(encounter_date)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_enc_event ON encounters(event_id)"
+            )
+            conn.execute("PRAGMA foreign_keys=ON")
+
+        # Ensure re_id index and partial unique indexes exist (safe to run at any time)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rd_re_id ON redcap_data(re_id)"
+        )
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_rd_encounter
+                ON redcap_data(record_id, field_name, instance)
+                WHERE record_id IS NOT NULL
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_rd_re
+                ON redcap_data(re_id, field_name, instance)
+                WHERE re_id IS NOT NULL
+        """)
+
         # Seed arm
         conn.execute("INSERT OR IGNORE INTO arms (arm_num, name) VALUES (1, 'Arm 1')")
 
@@ -329,6 +442,33 @@ def init_db() -> None:
                     idx,
                 ),
             )
+
+        # Seed instrument_event_map (INSERT OR IGNORE so re-runs are safe)
+        _ALL_INSTRUMENTS = [
+            "demographics", "address", "gp", "encounter", "vitals",
+            "conditions", "medications", "allergies", "lab_results",
+            "immunizations", "social_history", "clinical_notes",
+        ]
+        _FOLLOWUP_INSTRUMENTS = [
+            "encounter", "vitals", "conditions", "medications", "allergies",
+            "lab_results", "immunizations", "clinical_notes", "social_history",
+        ]
+        _IEM_SEED = [
+            ("baseline_arm_1",   _ALL_INSTRUMENTS),
+            ("followup_1_arm_1", _FOLLOWUP_INSTRUMENTS),
+            ("followup_2_arm_1", _FOLLOWUP_INSTRUMENTS),
+        ]
+        for _event_name, _instruments in _IEM_SEED:
+            _ev = conn.execute(
+                "SELECT event_id FROM events WHERE unique_event_name=?", (_event_name,)
+            ).fetchone()
+            if _ev:
+                for _form in _instruments:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO instrument_event_map (event_id, form_name) "
+                        "VALUES (?, ?)",
+                        (_ev["event_id"], _form),
+                    )
 
 
 # ---------------------------------------------------------------------------
@@ -540,18 +680,38 @@ def _assemble_record(
     return result
 
 
-def _upsert_eav(conn: sqlite3.Connection, record_id: str, triples: Iterable[tuple[str, str | None, int]]) -> None:
-    """Write EAV rows using ON CONFLICT DO UPDATE (never INSERT OR REPLACE)."""
-    for field_name, value, instance in triples:
-        conn.execute(
-            """
-            INSERT INTO redcap_data (record_id, field_name, value, instance)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT (record_id, field_name, instance)
-            DO UPDATE SET value = excluded.value
-            """,
-            (record_id, field_name, value, instance),
-        )
+def _upsert_eav(
+    conn: sqlite3.Connection,
+    triples: Iterable[tuple[str, str | None, int]],
+    *,
+    record_id: str | None = None,
+    re_id: str | None = None,
+) -> None:
+    """Write EAV rows via the encounter-backed (record_id) or record_event-backed (re_id) path."""
+    if record_id is None and re_id is None:
+        raise ValueError("_upsert_eav requires either record_id or re_id")
+    if record_id is not None:
+        for field_name, value, instance in triples:
+            conn.execute(
+                """
+                INSERT INTO redcap_data (record_id, re_id, field_name, value, instance)
+                VALUES (?, NULL, ?, ?, ?)
+                ON CONFLICT (record_id, field_name, instance) WHERE record_id IS NOT NULL
+                DO UPDATE SET value = excluded.value
+                """,
+                (record_id, field_name, value, instance),
+            )
+    else:
+        for field_name, value, instance in triples:
+            conn.execute(
+                """
+                INSERT INTO redcap_data (record_id, re_id, field_name, value, instance)
+                VALUES (NULL, ?, ?, ?, ?)
+                ON CONFLICT (re_id, field_name, instance) WHERE re_id IS NOT NULL
+                DO UPDATE SET value = excluded.value
+                """,
+                (re_id, field_name, value, instance),
+            )
 
 
 def _audit(conn: sqlite3.Connection, action: str, record_id: str | None = None,
@@ -605,7 +765,7 @@ def create_record(record_dict: dict[str, Any]) -> dict[str, Any]:
                  record_dict.get("encounter_type", "ambulatory"),
                  now, now),
             )
-            _upsert_eav(conn, record_id, _flatten_record(record_dict))
+            _upsert_eav(conn, _flatten_record(record_dict), record_id=record_id)
             _audit(conn, "record_add", record_id=record_id, description="Record created")
             p_row = conn.execute("SELECT * FROM patients WHERE patient_id=?", (patient_id,)).fetchone()
             e_row = conn.execute("SELECT * FROM encounters WHERE record_id=?", (record_id,)).fetchone()
@@ -659,7 +819,7 @@ def create_record(record_dict: dict[str, Any]) -> dict[str, Any]:
         )
 
         # EAV
-        _upsert_eav(conn, record_id, _flatten_record(record_dict))
+        _upsert_eav(conn, _flatten_record(record_dict), record_id=record_id)
 
         # Audit
         _audit(conn, "record_add", record_id=record_id, description="Record created")
@@ -750,7 +910,7 @@ def update_record(record_id: str, updates: dict[str, Any]) -> dict[str, Any] | N
                        field_name=fn, old_value=old_val, new_value=new_val)
 
         # Upsert EAV
-        _upsert_eav(conn, record_id, new_triples)
+        _upsert_eav(conn, new_triples, record_id=record_id)
 
         # Update encounter scalars if changed
         conn.execute(
@@ -1134,6 +1294,12 @@ def delete_patient(patient_id: str) -> bool:
             return False
         _audit(conn, "patient_delete", record_id=patient_id, description="Patient deleted")
         conn.execute(
+            "DELETE FROM redcap_data WHERE re_id IN "
+            "(SELECT re_id FROM record_events WHERE patient_id=?)",
+            (patient_id,),
+        )
+        conn.execute("DELETE FROM record_events WHERE patient_id=?", (patient_id,))
+        conn.execute(
             "DELETE FROM redcap_data WHERE record_id IN "
             "(SELECT record_id FROM encounters WHERE patient_id=?)",
             (patient_id,),
@@ -1159,6 +1325,209 @@ def count_records() -> int:
     return row["n"]
 
 
+# ---------------------------------------------------------------------------
+# REDCap instrument / event CRUD
+# ---------------------------------------------------------------------------
+
+def _get_or_create_re_id(conn: sqlite3.Connection, patient_id: str, event_name: str) -> str:
+    """Get or create a record_events row for (patient_id, event_name). Uses existing conn."""
+    ev = conn.execute(
+        "SELECT event_id FROM events WHERE unique_event_name=?", (event_name,)
+    ).fetchone()
+    if not ev:
+        raise ValueError(f"Unknown event: {event_name!r}")
+    event_id: int = ev["event_id"]
+
+    existing = conn.execute(
+        "SELECT re_id FROM record_events WHERE patient_id=? AND event_id=?",
+        (patient_id, event_id),
+    ).fetchone()
+    if existing:
+        return existing["re_id"]
+
+    now = _now()
+    re_id = str(uuid.uuid4())
+    conn.execute(
+        "INSERT INTO record_events (re_id, patient_id, event_id, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (re_id, patient_id, event_id, now, now),
+    )
+    return re_id
+
+
+def get_or_create_record_event(patient_id: str, event_name: str) -> str:
+    """Public: get or create a record_events row for (patient_id, event_name). Returns re_id."""
+    with _db_conn() as conn:
+        return _get_or_create_re_id(conn, patient_id, event_name)
+
+
+def get_instrument_data(patient_id: str, event_name: str, instrument: str) -> dict[str, Any]:
+    """Return stored field values and completion status for a single instrument at an event."""
+    with _db_conn() as conn:
+        ev = conn.execute(
+            "SELECT event_id FROM events WHERE unique_event_name=?", (event_name,)
+        ).fetchone()
+        if not ev:
+            return {"fields": {}, "completion_status": None}
+
+        re_row = conn.execute(
+            "SELECT re_id FROM record_events WHERE patient_id=? AND event_id=?",
+            (patient_id, ev["event_id"]),
+        ).fetchone()
+        if not re_row:
+            return {"fields": {}, "completion_status": None}
+
+        rows = conn.execute(
+            "SELECT field_name, value FROM redcap_data WHERE re_id=?",
+            (re_row["re_id"],),
+        ).fetchall()
+
+    complete_key = f"{instrument}_complete"
+    prefix = f"{instrument}."
+    fields: dict[str, str | None] = {}
+    completion_status: str | None = None
+
+    for row in rows:
+        fn: str = row["field_name"]
+        if fn == complete_key:
+            completion_status = row["value"]
+        elif fn.startswith(prefix):
+            fields[fn] = row["value"]
+
+    return {"fields": fields, "completion_status": completion_status}
+
+
+def upsert_instrument_data(
+    patient_id: str,
+    event_name: str,
+    instrument: str,
+    fields: dict[str, str | None],
+    completion_status: str | None,
+    instance: int = 0,
+) -> dict[str, Any]:
+    """Upsert EAV fields for a single instrument at a specific event. Returns fresh instrument data."""
+    with _db_conn() as conn:
+        if not conn.execute(
+            "SELECT 1 FROM patients WHERE patient_id=?", (patient_id,)
+        ).fetchone():
+            raise ValueError(f"Patient not found: {patient_id}")
+
+        if not conn.execute(
+            "SELECT 1 FROM redcap_metadata WHERE form_name=? LIMIT 1", (instrument,)
+        ).fetchone():
+            raise ValueError(f"Unknown instrument: {instrument!r}")
+
+        re_id = _get_or_create_re_id(conn, patient_id, event_name)
+
+        triples: list[tuple[str, str | None, int]] = [
+            (k, v, instance) for k, v in fields.items()
+        ]
+        _upsert_eav(conn, triples, re_id=re_id)
+
+        if completion_status is not None:
+            _upsert_eav(
+                conn,
+                [(f"{instrument}_complete", completion_status, 0)],
+                re_id=re_id,
+            )
+
+        _audit(
+            conn, "instrument_save", record_id=re_id,
+            description=f"{instrument} saved at {event_name}",
+        )
+
+    return get_instrument_data(patient_id, event_name, instrument)
+
+
+def get_record_status(patient_id: str) -> dict[str, Any]:
+    """Return completion status for every designated instrument across all events for a patient."""
+    with _db_conn() as conn:
+        events = conn.execute(
+            "SELECT event_id, unique_event_name, event_label "
+            "FROM events ORDER BY event_order"
+        ).fetchall()
+
+        iem_rows = conn.execute(
+            "SELECT event_id, form_name FROM instrument_event_map"
+        ).fetchall()
+
+        re_rows = conn.execute(
+            "SELECT re_id, event_id FROM record_events WHERE patient_id=?", (patient_id,)
+        ).fetchall()
+        re_by_event: dict[int, str] = {r["event_id"]: r["re_id"] for r in re_rows}
+
+        # Group instruments by event unique_event_name
+        ev_by_id: dict[int, str] = {e["event_id"]: e["unique_event_name"] for e in events}
+        instruments_by_event: dict[str, list[str]] = {e["unique_event_name"]: [] for e in events}
+        for row in iem_rows:
+            uen = ev_by_id.get(row["event_id"])
+            if uen:
+                instruments_by_event[uen].append(row["form_name"])
+
+        # Query completion status for each (event, instrument) pair
+        completion: dict[str, dict[str, str | None]] = {}
+        for ev in events:
+            uen = ev["unique_event_name"]
+            completion[uen] = {}
+            re_id = re_by_event.get(ev["event_id"])
+            for form_name in instruments_by_event[uen]:
+                if re_id is None:
+                    completion[uen][form_name] = None
+                else:
+                    complete_key = f"{form_name}_complete"
+                    row = conn.execute(
+                        "SELECT value FROM redcap_data "
+                        "WHERE re_id=? AND field_name=? AND instance=0",
+                        (re_id, complete_key),
+                    ).fetchone()
+                    completion[uen][form_name] = row["value"] if row else None
+
+    return {
+        "patient_id": patient_id,
+        "events": [dict(e) for e in events],
+        "instruments_by_event": instruments_by_event,
+        "completion": completion,
+    }
+
+
+def list_instrument_event_map() -> list[dict[str, Any]]:
+    """Return all instrument-event designations joined with event labels."""
+    with _db_conn() as conn:
+        rows = conn.execute(
+            "SELECT iem.iem_id, iem.event_id, e.unique_event_name, e.event_label, iem.form_name "
+            "FROM instrument_event_map iem "
+            "JOIN events e ON iem.event_id = e.event_id "
+            "ORDER BY e.event_order, iem.form_name"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_instrument_event_map(event_id: int, form_name: str, enabled: bool) -> None:
+    """Enable or disable an instrument's designation to an event."""
+    with _db_conn() as conn:
+        if enabled:
+            conn.execute(
+                "INSERT OR IGNORE INTO instrument_event_map (event_id, form_name) VALUES (?, ?)",
+                (event_id, form_name),
+            )
+        else:
+            conn.execute(
+                "DELETE FROM instrument_event_map WHERE event_id=? AND form_name=?",
+                (event_id, form_name),
+            )
+
+
+def get_instrument_audit_log(re_id: str) -> list[dict[str, Any]]:
+    """Return audit entries for a record_events row (mirrors get_audit_log for encounters)."""
+    with _db_conn() as conn:
+        rows = conn.execute(
+            "SELECT log_id, ts, username, record_id, field_name, old_value, new_value, "
+            "action, description FROM audit_log WHERE record_id=? ORDER BY log_id ASC",
+            (re_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 __all__ = [
     "init_db",
     "create_record",
@@ -1174,4 +1543,11 @@ __all__ = [
     "delete_patient",
     "set_fhir_bundle_id",
     "count_records",
+    "get_or_create_record_event",
+    "get_instrument_data",
+    "upsert_instrument_data",
+    "get_record_status",
+    "list_instrument_event_map",
+    "set_instrument_event_map",
+    "get_instrument_audit_log",
 ]

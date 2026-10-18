@@ -231,9 +231,9 @@ class PatientRecord(BaseModel):
     gp_practice: str | None = None
     pho: str | None = None
 
-    # Encounter context
-    encounter_date: ISODate
-    encounter_type: EncounterType = "ambulatory"
+    # Encounter context (optional — omit for pure instrument submissions)
+    encounter_date: ISODate | None = None
+    encounter_type: EncounterType | None = None
     redcap_event_name: str | None = None
     presenting_complaint: str | None = None
     clinician_name: str | None = None
@@ -320,6 +320,13 @@ class PatientCreate(BaseModel):
     @classmethod
     def validate_nhi(cls, v: str) -> str:
         return _validate_nhi(v)
+
+
+class InstrumentSubmission(BaseModel):
+    """Body for POST /api/patients/{id}/events/{event}/instruments/{instrument}."""
+    fields: dict[str, str | None] = Field(default_factory=dict)
+    completion_status: Literal["0", "1", "2"] | None = None
+    instance: int = Field(default=0, ge=0)
 
 
 class PatientUpdate(BaseModel):

@@ -50,14 +50,21 @@ from .db import (
     delete_patient,
     delete_record,
     get_audit_log,
+    get_instrument_audit_log,
+    get_instrument_data,
+    get_or_create_record_event,
     get_patient,
     get_record,
+    get_record_status,
     init_db,
+    list_instrument_event_map,
     list_patients,
     list_records,
     set_fhir_bundle_id,
+    set_instrument_event_map,
     update_patient,
     update_record,
+    upsert_instrument_data,
 )
 from .fhir_store import (
     count_resources,
@@ -67,7 +74,7 @@ from .fhir_store import (
     save_resource,
     search_resources,
 )
-from .models import PatientCreate, PatientRecord, PatientRecordUpdate, PatientUpdate
+from .models import InstrumentSubmission, PatientCreate, PatientRecord, PatientRecordUpdate, PatientUpdate
 from .snomed import (
     ALCOHOL_STATUS,
     ALLERGENS,
@@ -437,6 +444,71 @@ async def list_all_patients(
     offset: int = Query(0),
 ) -> list[dict[str, Any]]:
     return list_patients(nhi=nhi, family_name=family_name, limit=limit, offset=offset)
+
+
+# ---------------------------------------------------------------------------
+# REDCap instrument / event routes
+# ---------------------------------------------------------------------------
+
+@app.get("/api/patients/{patient_id}/record-status")
+async def get_patient_record_status(patient_id: str) -> dict[str, Any]:
+    if not get_patient(patient_id):
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return get_record_status(patient_id)
+
+
+@app.get("/api/patients/{patient_id}/events/{event_name}/instruments/{instrument}")
+async def get_instrument_handler(
+    patient_id: str, event_name: str, instrument: str
+) -> dict[str, Any]:
+    if not get_patient(patient_id):
+        raise HTTPException(status_code=404, detail="Patient not found")
+    try:
+        return get_instrument_data(patient_id, event_name, instrument)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/patients/{patient_id}/events/{event_name}/instruments/{instrument}")
+async def upsert_instrument_handler(
+    patient_id: str, event_name: str, instrument: str, body: InstrumentSubmission
+) -> dict[str, Any]:
+    if not get_patient(patient_id):
+        raise HTTPException(status_code=404, detail="Patient not found")
+    try:
+        return upsert_instrument_data(
+            patient_id, event_name, instrument,
+            body.fields, body.completion_status, body.instance,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/api/instrument-event-map")
+async def get_instrument_event_map() -> list[dict[str, Any]]:
+    return list_instrument_event_map()
+
+
+@app.put("/api/instrument-event-map/{event_id}/{form_name}")
+async def update_instrument_event_map(
+    event_id: int, form_name: str, body: dict[str, Any]
+) -> Response:
+    enabled = bool(body.get("enabled", True))
+    set_instrument_event_map(event_id, form_name, enabled)
+    return Response(status_code=204)
+
+
+@app.get("/api/patients/{patient_id}/events/{event_name}/instruments/{instrument}/audit")
+async def get_instrument_audit_handler(
+    patient_id: str, event_name: str, instrument: str
+) -> list[dict[str, Any]]:
+    if not get_patient(patient_id):
+        raise HTTPException(status_code=404, detail="Patient not found")
+    try:
+        re_id = get_or_create_record_event(patient_id, event_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return get_instrument_audit_log(re_id)
 
 
 # ---------------------------------------------------------------------------
