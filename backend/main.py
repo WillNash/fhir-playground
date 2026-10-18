@@ -45,8 +45,10 @@ from .converter import build_patient, clinical_record_to_fhir_bundle, get_patien
 from .data_dictionary import DATA_DICTIONARY, EVENTS, MISSING_DATA_CODES
 from .db import (
     count_records,
+    create_event,
     create_patient,
     create_record,
+    delete_event,
     delete_patient,
     delete_record,
     get_audit_log,
@@ -57,11 +59,13 @@ from .db import (
     get_record,
     get_record_status,
     init_db,
+    list_events,
     list_instrument_event_map,
     list_patients,
     list_records,
     set_fhir_bundle_id,
     set_instrument_event_map,
+    update_event,
     update_patient,
     update_record,
     upsert_instrument_data,
@@ -560,7 +564,43 @@ async def get_data_dictionary_csv() -> Response:
 
 @app.get("/api/ref/events")
 async def ref_events() -> list[dict[str, Any]]:
-    return EVENTS
+    return list_events()
+
+
+# ---------------------------------------------------------------------------
+# Event management
+# ---------------------------------------------------------------------------
+
+@app.get("/api/events")
+async def list_events_handler() -> list[dict[str, Any]]:
+    return list_events()
+
+
+@app.post("/api/events", status_code=201)
+async def create_event_handler(body: dict[str, Any]) -> dict[str, Any]:
+    label = (body.get("event_label") or "").strip()
+    if not label:
+        raise HTTPException(status_code=422, detail="event_label is required")
+    return create_event(label)
+
+
+@app.put("/api/events/{event_id}")
+async def update_event_handler(event_id: int, body: dict[str, Any]) -> dict[str, Any]:
+    result = update_event(
+        event_id,
+        event_label=body.get("event_label") or None,
+        event_order=body.get("event_order"),
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return result
+
+
+@app.delete("/api/events/{event_id}")
+async def delete_event_handler(event_id: int) -> Response:
+    if not delete_event(event_id):
+        raise HTTPException(status_code=404, detail="Event not found")
+    return Response(status_code=204)
 
 
 @app.get("/api/ref/missing-codes")

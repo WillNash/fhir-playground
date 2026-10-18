@@ -299,6 +299,7 @@ pre.fhir-json {
   <nav class="header-nav">
     <button class="nav-btn active" onclick="showPage('page-home')">Dashboard</button>
     <button class="nav-btn" onclick="showPage('page-status'); loadRecordStatusDashboard()">Record Status</button>
+    <button class="nav-btn" onclick="showPage('page-setup'); loadProjectSetup()">Project Setup</button>
     <button class="nav-btn" onclick="showPage('page-fhir'); loadFhirIndex()">FHIR Store</button>
     <button class="nav-btn" onclick="showPage('page-dict'); loadDataDictionary()">Data Dict</button>
     <span id="hapi-nav-badge" style="font-size:11px;padding:2px 7px;border-radius:10px;background:rgba(255,255,255,.15);color:rgba(255,255,255,.7);cursor:default;" title="HAPI FHIR Server">HAPI ···</span>
@@ -648,6 +649,68 @@ pre.fhir-json {
   </details>
 </main>
 
+<!-- ===== PROJECT SETUP ===== -->
+<main class="page" id="page-setup">
+  <div style="margin-bottom:20px;">
+    <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">Project Setup</h1>
+    <p style="color:var(--muted);margin-top:4px;">Manage longitudinal events and instrument designations</p>
+  </div>
+
+  <!-- Event management -->
+  <div class="card" style="margin-bottom:24px;">
+    <div class="card-header">
+      <h2>Events</h2>
+      <span style="font-size:12px;color:var(--muted);margin-left:8px;">Define the events (visits / time-points) for this project</span>
+    </div>
+    <div class="card-body">
+      <!-- Add event form -->
+      <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border);">
+        <div class="form-group" style="flex:1;max-width:320px;">
+          <label for="new-event-label">Event Label</label>
+          <input type="text" id="new-event-label" placeholder="e.g. Screening Visit" maxlength="80"
+            oninput="updateEventNamePreview()"
+            onkeydown="if(event.key==='Enter')addEvent()"/>
+        </div>
+        <div class="form-group" style="max-width:160px;">
+          <label for="new-event-name-preview" style="font-size:11px;">Unique Name (auto)</label>
+          <input type="text" id="new-event-name-preview" readonly
+            style="background:var(--bg);color:var(--muted);font-family:monospace;font-size:11px;"
+            placeholder="generated from label"/>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="addEvent()">+ Add Event</button>
+      </div>
+
+      <!-- Events table -->
+      <div class="table-wrap">
+        <table id="events-table">
+          <thead><tr>
+            <th style="width:40px;">#</th>
+            <th>Unique Event Name</th>
+            <th>Display Label</th>
+            <th style="width:120px;text-align:center;">Actions</th>
+          </tr></thead>
+          <tbody id="events-tbody">
+            <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Instrument-Event designation matrix -->
+  <div class="card">
+    <div class="card-header">
+      <h2>Instrument-Event Designations</h2>
+      <span style="font-size:12px;color:var(--muted);margin-left:8px;">REDCap "Designate Instruments for My Events" matrix</span>
+    </div>
+    <div class="card-body">
+      <div id="setup-iem-matrix">
+        <div style="color:var(--muted);font-size:12px;">Loading...</div>
+      </div>
+    </div>
+  </div>
+</main>
+
 </div><!-- /app-shell -->
 
 <!-- ===== MODAL ===== -->
@@ -699,7 +762,7 @@ function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-  const map = { 'page-home':'Dashboard', 'page-status':'Record Status', 'page-instrument':'Data Entry', 'page-fhir':'FHIR Store', 'page-dict':'Data Dict' };
+  const map = { 'page-home':'Dashboard', 'page-status':'Record Status', 'page-instrument':'Data Entry', 'page-setup':'Project Setup', 'page-fhir':'FHIR Store', 'page-dict':'Data Dict' };
   document.querySelectorAll('.nav-btn').forEach(b => { if(b.textContent.trim() === map[id]) b.classList.add('active'); });
   loadStats();
 }
@@ -2806,11 +2869,10 @@ async function loadInstrumentEventMap() {
   }
 }
 
-function renderInstrumentEventMatrix(mapData, instruments, events) {
-  const matrixEl = document.getElementById('iem-matrix');
+function renderInstrumentEventMatrix(mapData, instruments, events, targetId = 'iem-matrix') {
+  const matrixEl = document.getElementById(targetId);
   if (!matrixEl) return;
 
-  // Build set of enabled (event_id, form_name) pairs
   const enabled = new Set(mapData.map(r => r.event_id + '|' + r.form_name));
 
   let headerCols = events.map(e => `<th style="font-size:11px;padding:4px 8px;">${escHtml(e.event_label)}</th>`).join('');
@@ -2818,7 +2880,7 @@ function renderInstrumentEventMatrix(mapData, instruments, events) {
     const cells = events.map(ev => {
       const checked = enabled.has(ev.event_id + '|' + inst) ? 'checked' : '';
       return `<td style="text-align:center;padding:4px 8px;">
-        <input type="checkbox" ${checked} onchange="toggleInstrumentEvent(${ev.event_id},'${escHtml(inst)}',this.checked)" title="${escHtml(ev.event_label)} × ${escHtml(inst)}"/>
+        <input type="checkbox" ${checked} onchange="toggleInstrumentEvent(${ev.event_id},'${escHtml(inst)}',this.checked,'${escHtml(targetId)}')" title="${escHtml(ev.event_label)} × ${escHtml(inst)}"/>
       </td>`;
     }).join('');
     return `<tr><td style="font-size:12px;padding:4px 8px;font-family:monospace;">${escHtml(inst)}</td>${cells}</tr>`;
@@ -2832,7 +2894,7 @@ function renderInstrumentEventMatrix(mapData, instruments, events) {
   </table>`;
 }
 
-async function toggleInstrumentEvent(eventId, formName, enabled) {
+async function toggleInstrumentEvent(eventId, formName, enabled, sourceTargetId) {
   try {
     await fetch(`/api/instrument-event-map/${eventId}/${encodeURIComponent(formName)}`, {
       method: 'PUT',
@@ -2841,6 +2903,136 @@ async function toggleInstrumentEvent(eventId, formName, enabled) {
     });
   } catch(e) {
     console.error('IEM toggle failed:', e);
+  }
+}
+
+// ============================================================
+// Project Setup
+// ============================================================
+
+let _eventsById = {};  // eventId -> event_label, for safe onclick references
+
+function slugifyEventLabel(label) {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'event';
+}
+
+function updateEventNamePreview() {
+  const labelEl = document.getElementById('new-event-label');
+  const previewEl = document.getElementById('new-event-name-preview');
+  if (!labelEl || !previewEl) return;
+  const slug = slugifyEventLabel(labelEl.value);
+  previewEl.value = slug ? `${slug}_arm_1` : '';
+}
+
+async function loadProjectSetup() {
+  await Promise.all([loadEventsList(), loadSetupIemMatrix()]);
+}
+
+async function loadEventsList() {
+  const tbody = document.getElementById('events-tbody');
+  if (!tbody) return;
+  try {
+    const events = await apiGet('/api/events');
+    refData.events = events;
+    renderEventsList(events);
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="4" style="color:var(--danger);padding:16px;">${escHtml(e.message)}</td></tr>`;
+  }
+}
+
+function renderEventsList(events) {
+  const tbody = document.getElementById('events-tbody');
+  if (!tbody) return;
+  _eventsById = {};
+  events.forEach(ev => { _eventsById[ev.event_id] = ev.event_label; });
+  if (!events.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:32px;">No events defined. Add one above.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = events.map((ev, idx) => `
+    <tr id="event-row-${ev.event_id}">
+      <td style="padding:8px 12px;color:var(--muted);">${idx + 1}</td>
+      <td style="padding:8px 12px;font-family:monospace;font-size:12px;">${escHtml(ev.unique_event_name)}</td>
+      <td style="padding:8px 12px;" id="event-label-cell-${ev.event_id}">${escHtml(ev.event_label)}</td>
+      <td style="padding:8px 12px;text-align:center;white-space:nowrap;">
+        <button class="btn btn-secondary btn-sm" onclick="startEditEvent(${ev.event_id})">Rename</button>
+        <button class="btn btn-sm" style="background:var(--danger);color:white;border-color:var(--danger);" onclick="deleteEventConfirm(${ev.event_id})">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+function startEditEvent(eventId) {
+  const cell = document.getElementById(`event-label-cell-${eventId}`);
+  if (!cell) return;
+  const currentLabel = cell.textContent.trim();
+  cell.innerHTML = `
+    <input type="text" id="edit-label-${eventId}" value="${escHtml(currentLabel)}" style="max-width:220px;"
+      onkeydown="if(event.key==='Enter')saveEditEvent(${eventId});if(event.key==='Escape')loadEventsList()"/>
+    <button class="btn btn-primary btn-sm" onclick="saveEditEvent(${eventId})" style="margin-left:4px;">Save</button>
+    <button class="btn btn-secondary btn-sm" onclick="loadEventsList()" style="margin-left:4px;">Cancel</button>`;
+  const inp = document.getElementById(`edit-label-${eventId}`);
+  if (inp) { inp.focus(); inp.select(); }
+}
+
+async function saveEditEvent(eventId) {
+  const inp = document.getElementById(`edit-label-${eventId}`);
+  if (!inp) return;
+  const newLabel = inp.value.trim();
+  if (!newLabel) { inp.focus(); return; }
+  try {
+    await fetch(`/api/events/${eventId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_label: newLabel }),
+    }).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.detail || JSON.stringify(e)); }); return r.json(); });
+    await loadProjectSetup();
+  } catch(e) {
+    alert('Failed to rename event: ' + e.message);
+  }
+}
+
+async function addEvent() {
+  const inp = document.getElementById('new-event-label');
+  if (!inp) return;
+  const label = inp.value.trim();
+  if (!label) { inp.focus(); return; }
+  try {
+    await fetch('/api/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_label: label }),
+    }).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.detail || JSON.stringify(e)); }); return r.json(); });
+    inp.value = '';
+    const preview = document.getElementById('new-event-name-preview');
+    if (preview) preview.value = '';
+    await loadProjectSetup();
+  } catch(e) {
+    alert('Failed to add event: ' + e.message);
+  }
+}
+
+async function deleteEventConfirm(eventId) {
+  const label = _eventsById[eventId] || `Event ${eventId}`;
+  if (!confirm(`Delete event "${label}"?\n\nThis will permanently remove all data recorded at this event for every patient.`)) return;
+  try {
+    const r = await fetch(`/api/events/${eventId}`, { method: 'DELETE' });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.detail || JSON.stringify(e)); }
+    await loadProjectSetup();
+  } catch(e) {
+    alert('Failed to delete event: ' + e.message);
+  }
+}
+
+async function loadSetupIemMatrix() {
+  const el = document.getElementById('setup-iem-matrix');
+  if (!el) return;
+  try {
+    const mapData = await apiGet('/api/instrument-event-map');
+    const instruments = [...new Set((refData.dataDictionary || []).map(f => f.form_name))].filter(Boolean);
+    const events = refData.events || [];
+    renderInstrumentEventMatrix(mapData, instruments, events, 'setup-iem-matrix');
+  } catch(e) {
+    el.innerHTML = '<div style="color:var(--danger);font-size:12px;">Error: ' + escHtml(e.message) + '</div>';
   }
 }
 </script>

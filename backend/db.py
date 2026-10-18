@@ -18,6 +18,7 @@ The FHIR store is separate (fhir_store.py).
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -1528,6 +1529,109 @@ def get_instrument_audit_log(re_id: str) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
+# ---------------------------------------------------------------------------
+# Event management CRUD
+# ---------------------------------------------------------------------------
+
+def list_events() -> list[dict[str, Any]]:
+    """Return all events ordered by event_order."""
+    with _db_conn() as conn:
+        rows = conn.execute(
+            "SELECT event_id, arm_id, unique_event_name, event_label, event_order "
+            "FROM events ORDER BY event_order"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_event(event_label: str) -> dict[str, Any]:
+    """Create a new event, auto-generating a unique_event_name from the label."""
+    slug = re.sub(r"[^a-z0-9]+", "_", event_label.lower()).strip("_") or "event"
+    base_unique = f"{slug}_arm_1"
+
+    with _db_conn() as conn:
+        arm_row = conn.execute("SELECT arm_id FROM arms WHERE arm_num=1").fetchone()
+        arm_id: int = arm_row["arm_id"] if arm_row else 1
+
+        unique_event_name = base_unique
+        counter = 2
+        while conn.execute(
+            "SELECT 1 FROM events WHERE unique_event_name=?", (unique_event_name,)
+        ).fetchone():
+            stem = re.sub(r"_arm_\d+$", "", base_unique)
+            unique_event_name = f"{stem}_{counter}_arm_1"
+            counter += 1
+
+        max_row = conn.execute("SELECT MAX(event_order) AS mo FROM events").fetchone()
+        event_order: int = (max_row["mo"] or 0) + 1
+
+        conn.execute(
+            "INSERT INTO events (arm_id, unique_event_name, event_label, event_order) "
+            "VALUES (?, ?, ?, ?)",
+            (arm_id, unique_event_name, event_label, event_order),
+        )
+        new_row = conn.execute(
+            "SELECT event_id, arm_id, unique_event_name, event_label, event_order "
+            "FROM events WHERE unique_event_name=?",
+            (unique_event_name,),
+        ).fetchone()
+    return dict(new_row)
+
+
+def update_event(
+    event_id: int,
+    event_label: str | None = None,
+    event_order: int | None = None,
+) -> dict[str, Any] | None:
+    """Update an event's display label and/or ordering. Returns None if not found."""
+    with _db_conn() as conn:
+        existing = conn.execute(
+            "SELECT event_id, arm_id, unique_event_name, event_label, event_order "
+            "FROM events WHERE event_id=?",
+            (event_id,),
+        ).fetchone()
+        if not existing:
+            return None
+
+        new_label = event_label if event_label is not None else existing["event_label"]
+        new_order = event_order if event_order is not None else existing["event_order"]
+
+        conn.execute(
+            "UPDATE events SET event_label=?, event_order=? WHERE event_id=?",
+            (new_label, new_order, event_id),
+        )
+        updated = conn.execute(
+            "SELECT event_id, arm_id, unique_event_name, event_label, event_order "
+            "FROM events WHERE event_id=?",
+            (event_id,),
+        ).fetchone()
+    return dict(updated)
+
+
+def delete_event(event_id: int) -> bool:
+    """Delete an event and cascade to record_events, instrument_event_map, encounters."""
+    with _db_conn() as conn:
+        if not conn.execute(
+            "SELECT 1 FROM events WHERE event_id=?", (event_id,)
+        ).fetchone():
+            return False
+
+        conn.execute(
+            "DELETE FROM redcap_data WHERE re_id IN "
+            "(SELECT re_id FROM record_events WHERE event_id=?)",
+            (event_id,),
+        )
+        conn.execute("DELETE FROM record_events WHERE event_id=?", (event_id,))
+        conn.execute(
+            "DELETE FROM redcap_data WHERE record_id IN "
+            "(SELECT record_id FROM encounters WHERE event_id=?)",
+            (event_id,),
+        )
+        conn.execute("DELETE FROM encounters WHERE event_id=?", (event_id,))
+        conn.execute("DELETE FROM instrument_event_map WHERE event_id=?", (event_id,))
+        conn.execute("DELETE FROM events WHERE event_id=?", (event_id,))
+    return True
+
+
 __all__ = [
     "init_db",
     "create_record",
@@ -1550,4 +1654,8 @@ __all__ = [
     "list_instrument_event_map",
     "set_instrument_event_map",
     "get_instrument_audit_log",
+    "list_events",
+    "create_event",
+    "update_event",
+    "delete_event",
 ]
