@@ -21,6 +21,7 @@ from typing import Any, Generator, TypeAlias, TypedDict
 _HERE = Path(__file__).parent
 
 FHIR_DIR = Path(os.environ.get("FHIR_DIR", str(_HERE / ".." / "data" / "fhir_store")))
+FHIR_HISTORY_DIR = FHIR_DIR.parent / "fhir_history"
 INDEX_DB = Path(os.environ.get("FHIR_INDEX_DB", str(_HERE / ".." / "data" / "fhir_index.db")))
 
 # ---------------------------------------------------------------------------
@@ -42,6 +43,15 @@ class FhirIndexRow(TypedDict):
     record_id: str | None
     stored_at: str
     summary: str | None
+    version_id: int
+
+
+class FhirHistoryEntry(TypedDict):
+    resource_id: str
+    version_id: int
+    resource_type: str
+    stored_at: str
+    summary: str | None
 
 
 # ---------------------------------------------------------------------------
@@ -56,16 +66,27 @@ _INIT_SQL = """
         nhi_number      TEXT,
         date            TEXT,
         subject_name    TEXT,
-        record_id       TEXT,    -- link back to clinical record
+        record_id       TEXT,
         stored_at       TEXT NOT NULL,
-        summary         TEXT     -- one-line human description
+        summary         TEXT,
+        version_id      INTEGER NOT NULL DEFAULT 1
     );
 
-    CREATE INDEX IF NOT EXISTS idx_fhir_patient ON fhir_index (patient_id);
-    CREATE INDEX IF NOT EXISTS idx_fhir_nhi     ON fhir_index (nhi_number);
-    CREATE INDEX IF NOT EXISTS idx_fhir_type    ON fhir_index (resource_type);
-    CREATE INDEX IF NOT EXISTS idx_fhir_date    ON fhir_index (date);
-    CREATE INDEX IF NOT EXISTS idx_fhir_record  ON fhir_index (record_id);
+    CREATE TABLE IF NOT EXISTS fhir_history (
+        history_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+        resource_id     TEXT NOT NULL,
+        version_id      INTEGER NOT NULL,
+        resource_type   TEXT NOT NULL,
+        stored_at       TEXT NOT NULL,
+        summary         TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_fhir_patient  ON fhir_index (patient_id);
+    CREATE INDEX IF NOT EXISTS idx_fhir_nhi      ON fhir_index (nhi_number);
+    CREATE INDEX IF NOT EXISTS idx_fhir_type     ON fhir_index (resource_type);
+    CREATE INDEX IF NOT EXISTS idx_fhir_date     ON fhir_index (date);
+    CREATE INDEX IF NOT EXISTS idx_fhir_record   ON fhir_index (record_id);
+    CREATE INDEX IF NOT EXISTS idx_fhir_hist_res ON fhir_history (resource_id);
 """
 
 
@@ -214,10 +235,15 @@ def _summary_for_clinical_resource(
 
 
 def init_fhir_store() -> None:
-    """Create the storage directory and index table if they do not already exist."""
+    """Create storage directories, index table, and history table."""
     FHIR_DIR.mkdir(parents=True, exist_ok=True)
+    FHIR_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
     with _index_conn() as conn:
         conn.executescript(_INIT_SQL)
+        # Migrate: add version_id column to existing databases that predate it
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(fhir_index)")}
+        if "version_id" not in cols:
+            conn.execute("ALTER TABLE fhir_index ADD COLUMN version_id INTEGER NOT NULL DEFAULT 1")
     _purge_orphaned_index_entries()
 
 
@@ -225,7 +251,8 @@ def save_resource(resource: FhirResource, record_id: str | None = None) -> str:
     """
     Persist a single FHIR resource (or Bundle) to disk and update the index.
 
-    Returns the resource id.
+    On every write the previous version is archived to fhir_history/ and
+    meta.versionId is incremented.  Returns the resource id.
     Raises ValueError if the resource has no ``id`` field.
     """
     resource_id: str | None = resource.get("id")
@@ -233,12 +260,39 @@ def save_resource(resource: FhirResource, record_id: str | None = None) -> str:
         raise ValueError("FHIR resource must have an id field")
 
     resource_type: str = resource.get("resourceType", "Unknown")
+    now = _now_iso()
 
     FHIR_DIR.mkdir(parents=True, exist_ok=True)
-    path = FHIR_DIR / f"{resource_id}.json"
-    path.write_text(json.dumps(resource, indent=2, ensure_ascii=False), encoding="utf-8")
+    FHIR_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Derive index fields from the resource type.
+    # Determine next version and archive the current version if one exists
+    current_path = FHIR_DIR / f"{resource_id}.json"
+    with _index_conn() as conn:
+        row = conn.execute(
+            "SELECT version_id, summary FROM fhir_index WHERE id=?", (resource_id,)
+        ).fetchone()
+        prev_version: int = row["version_id"] if row else 0
+        next_version: int = prev_version + 1
+
+        if prev_version > 0 and current_path.exists():
+            hist_dir = FHIR_HISTORY_DIR / resource_id
+            hist_dir.mkdir(parents=True, exist_ok=True)
+            hist_path = hist_dir / f"v{prev_version}.json"
+            hist_path.write_bytes(current_path.read_bytes())
+            conn.execute(
+                "INSERT INTO fhir_history (resource_id, version_id, resource_type, stored_at, summary) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (resource_id, prev_version, resource_type, now, row["summary"]),
+            )
+
+    # Stamp meta before writing
+    resource.setdefault("meta", {})
+    resource["meta"]["versionId"] = str(next_version)
+    resource["meta"]["lastUpdated"] = now
+
+    current_path.write_text(json.dumps(resource, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    # Derive index fields
     patient_id: str | None = None
     nhi_number: str | None = None
     date_val: str
@@ -254,38 +308,25 @@ def save_resource(resource: FhirResource, record_id: str | None = None) -> str:
                     break
             date_val = (resource.get("timestamp") or _today_iso())[:10]
             summary = f"Bundle for {subject_name or 'unknown'} on {date_val}"
-
         case "Patient":
             patient_id, nhi_number, subject_name = _patient_fields(resource)
             date_val = _today_iso()
             summary = f"Patient: {subject_name}"
-
         case _:
             patient_id = _patient_ref_from_resource(resource)
             date_val = _date_from_clinical_resource(resource)
-            summary = _summary_for_clinical_resource(
-                resource, resource_type, resource_id, date_val
-            )
+            summary = _summary_for_clinical_resource(resource, resource_type, resource_id, date_val)
 
     with _index_conn() as conn:
         conn.execute(
             """
             INSERT OR REPLACE INTO fhir_index
                 (id, resource_type, patient_id, nhi_number, date,
-                 subject_name, record_id, stored_at, summary)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 subject_name, record_id, stored_at, summary, version_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (
-                resource_id,
-                resource_type,
-                patient_id,
-                nhi_number,
-                date_val,
-                subject_name,
-                record_id,
-                _now_iso(),
-                summary,
-            ),
+            (resource_id, resource_type, patient_id, nhi_number, date_val,
+             subject_name, record_id, now, summary, next_version),
         )
 
     return resource_id
@@ -391,6 +432,62 @@ def clear_all_resources() -> int:
         for p in FHIR_DIR.glob("*.json"):
             p.unlink()
     return count
+
+
+def get_resource_history(resource_id: str) -> list[FhirHistoryEntry]:
+    """
+    Return all historical versions of a resource, ordered oldest → newest.
+
+    The current (live) version is appended last using its index row.
+    """
+    with _index_conn() as conn:
+        hist_rows = conn.execute(
+            "SELECT resource_id, version_id, resource_type, stored_at, summary "
+            "FROM fhir_history WHERE resource_id = ? ORDER BY version_id ASC",
+            (resource_id,),
+        ).fetchall()
+        current = conn.execute(
+            "SELECT version_id, resource_type, stored_at, summary "
+            "FROM fhir_index WHERE id = ?",
+            (resource_id,),
+        ).fetchone()
+
+    entries: list[FhirHistoryEntry] = [dict(r) for r in hist_rows]  # type: ignore[misc]
+    if current:
+        entries.append(
+            FhirHistoryEntry(
+                resource_id=resource_id,
+                version_id=current["version_id"],
+                resource_type=current["resource_type"],
+                stored_at=current["stored_at"],
+                summary=current["summary"],
+            )
+        )
+    return entries
+
+
+def get_resource_version(resource_id: str, version_id: int) -> FhirResource | None:
+    """
+    Load a specific historical version of a resource.
+
+    For the current live version pass the current ``version_id``; older versions
+    are read from ``fhir_history/<resource_id>/v<n>.json``.
+    """
+    with _index_conn() as conn:
+        current_version: int | None = None
+        row = conn.execute(
+            "SELECT version_id FROM fhir_index WHERE id = ?", (resource_id,)
+        ).fetchone()
+        if row:
+            current_version = row["version_id"]
+
+    if current_version is not None and version_id == current_version:
+        return get_resource(resource_id)
+
+    hist_path = FHIR_HISTORY_DIR / resource_id / f"v{version_id}.json"
+    if not hist_path.exists():
+        return None
+    return json.loads(hist_path.read_text(encoding="utf-8"))  # type: ignore[return-value]
 
 
 def _purge_orphaned_index_entries() -> int:

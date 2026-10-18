@@ -75,6 +75,8 @@ from .fhir_store import (
     clear_all_resources,
     count_resources,
     get_resource,
+    get_resource_history,
+    get_resource_version,
     init_fhir_store,
     list_all_index,
     save_resource,
@@ -297,6 +299,27 @@ async def search_fhir(
         limit=limit,
         offset=offset,
     )
+
+
+@app.get("/api/fhir/{resource_id}/_history")
+async def get_fhir_resource_history(resource_id: str) -> list[dict[str, Any]]:
+    """List all versions of a FHIR resource, oldest first; last entry is the current version."""
+    history = get_resource_history(resource_id)
+    if not history:
+        raise HTTPException(status_code=404, detail="FHIR resource not found")
+    return history  # type: ignore[return-value]
+
+
+@app.get("/api/fhir/{resource_id}/_history/{version_id}")
+async def get_fhir_resource_version(resource_id: str, version_id: int) -> JSONResponse:
+    """Return the FHIR resource at the requested versionId."""
+    resource = get_resource_version(resource_id, version_id)
+    if not resource:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Version {version_id} of resource {resource_id!r} not found",
+        )
+    return JSONResponse(content=resource, media_type="application/fhir+json")
 
 
 @app.get("/api/fhir/{resource_id}")
