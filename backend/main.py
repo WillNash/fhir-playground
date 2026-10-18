@@ -72,6 +72,7 @@ from .db import (
     upsert_instrument_data,
 )
 from .fhir_store import (
+    clear_all_resources,
     count_resources,
     get_resource,
     init_fhir_store,
@@ -304,6 +305,12 @@ async def get_fhir_resource(resource_id: str) -> JSONResponse:
     if not resource:
         raise HTTPException(status_code=404, detail="FHIR resource not found")
     return JSONResponse(content=resource, media_type="application/fhir+json")
+
+
+@app.delete("/api/fhir")
+async def delete_all_fhir_resources() -> dict[str, int]:
+    deleted = clear_all_resources()
+    return {"deleted": deleted}
 
 
 # ---------------------------------------------------------------------------

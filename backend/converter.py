@@ -136,8 +136,11 @@ def _today_nz() -> str:
     return datetime.now(_NZ_TZ).date().isoformat()
 
 
-def _uuid() -> str:
-    return str(uuid.uuid4())
+_NAMESPACE = uuid.UUID("12e4b2c0-9dad-4a71-8000-7edcab000001")  # fixed app namespace for det IDs
+
+def _det_uuid(*parts: str) -> str:
+    """Deterministic UUID5 so the same logical resource always gets the same ID."""
+    return str(uuid.uuid5(_NAMESPACE, "/".join(parts)))
 
 
 def _ref(resource_type: str, resource_id: str) -> dict[str, str]:
@@ -227,7 +230,7 @@ def _patient_extra_extensions(record: dict[str, Any]) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def build_patient(record: dict[str, Any]) -> dict[str, Any]:  # Any: external JSON
-    patient_id = _uuid()
+    patient_id = _det_uuid("Patient", record["patient_id"])
     extensions = _ethnicity_extensions(record) + _patient_extra_extensions(record)
 
     patient: dict[str, Any] = {
@@ -265,7 +268,7 @@ def build_organization_ref(record: dict[str, Any]) -> dict[str, Any] | None:  # 
         return None
     return {
         "resourceType": "Organization",
-        "id": _uuid(),
+        "id": _det_uuid("Organization", record.get("gp_practice", "")),
         "name": record["gp_practice"],
         "type": [{
             "coding": [{
@@ -278,7 +281,7 @@ def build_organization_ref(record: dict[str, Any]) -> dict[str, Any] | None:  # 
 
 
 def build_encounter(record: dict[str, Any], patient_id: str) -> dict[str, Any]:  # Any: external JSON
-    encounter_id = _uuid()
+    encounter_id = _det_uuid("Encounter", record["record_id"])
 
     enc_class = _ENCOUNTER_CLASS_MAP.get(
         record.get("encounter_type", "ambulatory"),
@@ -316,6 +319,7 @@ def build_vitals(
     patient_id: str,
     encounter_id: str | None,
     encounter_date: str,
+    record_id: str = "",
 ) -> list[dict[str, Any]]:
     """Build FHIR Observation resources for each vital sign recorded."""
     observations: list[dict[str, Any]] = []
@@ -327,7 +331,7 @@ def build_vitals(
     if sbp is not None and dbp is not None and not _is_missing_code(sbp) and not _is_missing_code(dbp):
         bp_obs: dict[str, Any] = {
             "resourceType": "Observation",
-            "id": _uuid(),
+            "id": _det_uuid("Observation", record_id, "bp"),
             "meta": {"profile": ["http://hl7.org/fhir/StructureDefinition/bp"]},
             "status": "final",
             "category": category,
@@ -362,7 +366,7 @@ def build_vitals(
     if spo2_val is not None and not _is_missing_code(spo2_val):
         spo2_obs: dict[str, Any] = {
             "resourceType": "Observation",
-            "id": _uuid(),
+            "id": _det_uuid("Observation", record_id, "spo2"),
             "status": "final",
             "category": category,
             "code": {
@@ -398,7 +402,7 @@ def build_vitals(
         obs_meta = OBSERVATIONS.get(loinc, {})
         vital_obs: dict[str, Any] = {
             "resourceType": "Observation",
-            "id": _uuid(),
+            "id": _det_uuid("Observation", record_id, loinc),
             "status": "final",
             "category": category,
             "code": {
@@ -426,6 +430,8 @@ def build_lab_observation(
     lab: dict[str, Any],  # Any: external JSON
     patient_id: str,
     encounter_id: str | None,
+    record_id: str = "",
+    idx: int = 0,
 ) -> dict[str, Any]:
     loinc_code: str = lab.get("loinc_code", "")
     obs_meta = OBSERVATIONS.get(loinc_code, {})
@@ -437,7 +443,7 @@ def build_lab_observation(
 
     obs: dict[str, Any] = {
         "resourceType": "Observation",
-        "id": _uuid(),
+        "id": _det_uuid("Observation", record_id, "lab", loinc_code, str(idx)),
         "status": "final",
         "category": _obs_category("laboratory", "Laboratory"),
         "code": {
@@ -494,12 +500,14 @@ def build_condition(
     cond: dict[str, Any],  # Any: external JSON
     patient_id: str,
     encounter_id: str | None,
+    record_id: str = "",
+    idx: int = 0,
 ) -> dict[str, Any]:
     clin_status = _coerce_status(cond.get("status"), _CONDITION_STATUSES)
 
     fhir_cond: dict[str, Any] = {
         "resourceType": "Condition",
-        "id": _uuid(),
+        "id": _det_uuid("Condition", record_id, str(idx)),
         "clinicalStatus": {"coding": [{
             "system": _SYS_COND_CLINICAL,
             "code": clin_status,
@@ -535,6 +543,8 @@ def build_medication_statement(
     med: dict[str, Any],  # Any: external JSON
     patient_id: str,
     encounter_id: str | None,
+    record_id: str = "",
+    idx: int = 0,
 ) -> dict[str, Any]:
     fhir_status = _coerce_status(med.get("status"), _MEDICATION_STATUSES)
 
@@ -551,7 +561,7 @@ def build_medication_statement(
 
     stmt: dict[str, Any] = {
         "resourceType": "MedicationStatement",
-        "id": _uuid(),
+        "id": _det_uuid("MedicationStatement", record_id, str(idx)),
         "status": fhir_status,
         "medicationCodeableConcept": {
             "coding": [{
@@ -576,7 +586,7 @@ def build_medication_statement(
     return stmt
 
 
-def build_allergy(allergy: dict[str, Any], patient_id: str) -> dict[str, Any]:  # Any: external JSON
+def build_allergy(allergy: dict[str, Any], patient_id: str, record_id: str = "", idx: int = 0) -> dict[str, Any]:  # Any: external JSON
     allergen_code: str = allergy.get("allergen_code", "")
     severity = allergy.get("severity")
     fhir_severity: str | None = severity if severity in _VALID_ALLERGY_SEVERITIES else None
@@ -585,7 +595,7 @@ def build_allergy(allergy: dict[str, Any], patient_id: str) -> dict[str, Any]:  
 
     ai: dict[str, Any] = {
         "resourceType": "AllergyIntolerance",
-        "id": _uuid(),
+        "id": _det_uuid("AllergyIntolerance", record_id, str(idx)),
         "clinicalStatus": {"coding": [{
             "system": _SYS_ALLERGY_CLINICAL,
             "code": status_code,
@@ -624,10 +634,12 @@ def build_immunization(
     imm: dict[str, Any],  # Any: external JSON
     patient_id: str,
     encounter_id: str | None,
+    record_id: str = "",
+    idx: int = 0,
 ) -> dict[str, Any]:
     resource: dict[str, Any] = {
         "resourceType": "Immunization",
-        "id": _uuid(),
+        "id": _det_uuid("Immunization", record_id, str(idx)),
         "status": "completed",
         "vaccineCode": {
             "coding": [{
@@ -654,6 +666,7 @@ def build_social_history_observations(
     patient_id: str,
     encounter_id: str | None,
     encounter_date: str,
+    record_id: str = "",
 ) -> list[dict[str, Any]]:
     obs_list: list[dict[str, Any]] = []
     category = _obs_category("social-history", "Social History")
@@ -661,7 +674,7 @@ def build_social_history_observations(
     if social.get("smoking_status_code"):
         smoking_obs: dict[str, Any] = {
             "resourceType": "Observation",
-            "id": _uuid(),
+            "id": _det_uuid("Observation", record_id, "smoking"),
             "status": "final",
             "category": category,
             "code": {"coding": [{"system": LOINC_SYSTEM, "code": "72166-2",
@@ -681,7 +694,7 @@ def build_social_history_observations(
     if social.get("alcohol_units_per_week") is not None and not _is_missing_code(social.get("alcohol_units_per_week")):
         alcohol_obs: dict[str, Any] = {
             "resourceType": "Observation",
-            "id": _uuid(),
+            "id": _det_uuid("Observation", record_id, "alcohol"),
             "status": "final",
             "category": category,
             "code": {"coding": [{"system": LOINC_SYSTEM, "code": "74013-4",
@@ -707,6 +720,7 @@ def build_composition(
     patient_id: str,
     encounter_id: str | None,
     section_entries: dict[str, list[dict[str, str]]],
+    record_id: str = "",
 ) -> dict[str, Any]:
     notes: list[dict[str, Any]] = record.get("clinical_notes", [])
 
@@ -730,7 +744,7 @@ def build_composition(
 
     composition: dict[str, Any] = {
         "resourceType": "Composition",
-        "id": _uuid(),
+        "id": _det_uuid("Composition", record_id),
         "status": "final",
         "type": {
             "coding": [{"system": LOINC_SYSTEM, "code": "11506-3", "display": "Progress note"}],
@@ -756,7 +770,8 @@ def clinical_record_to_fhir_bundle(record: dict[str, Any]) -> dict[str, Any]:  #
     Convert a raw clinical PatientRecord dict into a FHIR R4 Transaction Bundle.
     Returns the Bundle dict ready for persistence.
     """
-    bundle_id = _uuid()
+    record_id: str = record["record_id"]
+    bundle_id = _det_uuid("Bundle", record_id)
     entries: list[dict[str, Any]] = []
 
     def _entry(resource: dict[str, Any]) -> dict[str, Any]:
@@ -804,42 +819,42 @@ def clinical_record_to_fhir_bundle(record: dict[str, Any]) -> dict[str, Any]:  #
     # Vitals
     vitals_raw = record.get("vitals") or {}
     if isinstance(vitals_raw, dict):
-        for obs in build_vitals(vitals_raw, patient_id, encounter_id, encounter_date):
+        for obs in build_vitals(vitals_raw, patient_id, encounter_id, encounter_date, record_id):
             _add(obs, "Vital Signs")
 
     # Lab results
-    for lab in record.get("lab_results", []):
+    for i, lab in enumerate(record.get("lab_results", [])):
         if isinstance(lab, dict):
-            _add(build_lab_observation(lab, patient_id, encounter_id), "Laboratory Results")
+            _add(build_lab_observation(lab, patient_id, encounter_id, record_id, i), "Laboratory Results")
 
     # Conditions
-    for cond in record.get("conditions", []):
+    for i, cond in enumerate(record.get("conditions", [])):
         if isinstance(cond, dict):
-            _add(build_condition(cond, patient_id, encounter_id), "Conditions")
+            _add(build_condition(cond, patient_id, encounter_id, record_id, i), "Conditions")
 
     # Medications
-    for med in record.get("medications", []):
+    for i, med in enumerate(record.get("medications", [])):
         if isinstance(med, dict):
-            _add(build_medication_statement(med, patient_id, encounter_id), "Medications")
+            _add(build_medication_statement(med, patient_id, encounter_id, record_id, i), "Medications")
 
     # Allergies
-    for allergy in record.get("allergies", []):
+    for i, allergy in enumerate(record.get("allergies", [])):
         if isinstance(allergy, dict):
-            _add(build_allergy(allergy, patient_id), "Allergies")
+            _add(build_allergy(allergy, patient_id, record_id, i), "Allergies")
 
     # Immunizations
-    for imm in record.get("immunizations", []):
+    for i, imm in enumerate(record.get("immunizations", [])):
         if isinstance(imm, dict):
-            _add(build_immunization(imm, patient_id, encounter_id), "Immunizations")
+            _add(build_immunization(imm, patient_id, encounter_id, record_id, i), "Immunizations")
 
     # Social history
     social = record.get("social_history") or {}
     if isinstance(social, dict) and any(social.values()):
-        for obs in build_social_history_observations(social, patient_id, encounter_id, encounter_date):
+        for obs in build_social_history_observations(social, patient_id, encounter_id, encounter_date, record_id):
             _add(obs, "Social History")
 
     # Composition (clinical document index)
-    entries.append(_entry(build_composition(record, patient_id, encounter_id, section_entries)))
+    entries.append(_entry(build_composition(record, patient_id, encounter_id, section_entries, record_id)))
 
     return {
         "resourceType": "Bundle",

@@ -470,6 +470,10 @@ pre.fhir-json {
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
     <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">FHIR Store</h1>
     <div id="hapi-status-bar" style="display:flex;align-items:center;gap:8px;font-size:13px;"></div>
+    <button class="btn btn-sm" onclick="clearAllFhirResources()"
+      style="margin-left:auto;background:#fee2e2;color:#dc2626;border-color:#fca5a5;">
+      Clear all resources
+    </button>
   </div>
 
   <!-- Tab bar -->
@@ -2190,6 +2194,20 @@ async function viewRecord(recordId) {
 // ============================================================
 // FHIR Store
 // ============================================================
+async function clearAllFhirResources() {
+  if (!confirm('Delete every FHIR resource in the local store? This cannot be undone.')) return;
+  try {
+    const r = await fetch('/api/fhir', { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json()).detail || r.statusText);
+    const { deleted } = await r.json();
+    showToast(`Cleared ${deleted} FHIR resources.`, 'info');
+    loadFhirIndex();
+    loadStats();
+  } catch(e) {
+    showToast('Clear failed: ' + e.message, 'error');
+  }
+}
+
 async function loadFhirIndex() {
   const type = document.getElementById('fhir-type-filter').value;
   const name = document.getElementById('fhir-name-filter').value.trim();
@@ -2648,14 +2666,11 @@ function renderStatusGrid(patients, statusMap) {
             title="${escHtml(inst)}: ${tip} — click to enter data"></span>
         </td>`;
       });
-      const hasData = Object.values(evCompletion).some(v => v !== null);
-      if (hasData) {
-        fhirCells += `<span class="fhir-convert-btn"
-          data-patient="${p.patient_id}"
-          data-event="${ev.unique_event_name}"
-          style="display:inline-block;margin-bottom:2px;font-size:11px;cursor:pointer;color:var(--fhir-orange);text-decoration:underline;"
-          title="Convert ${escHtml(ev.event_label)} to FHIR">${escHtml(ev.event_label)} →</span><br>`;
-      }
+      fhirCells += `<span class="fhir-convert-btn"
+        data-patient="${p.patient_id}"
+        data-event="${ev.unique_event_name}"
+        style="display:inline-block;margin-bottom:2px;font-size:11px;cursor:pointer;color:var(--fhir-orange);text-decoration:underline;"
+        title="Convert ${escHtml(ev.event_label)} to FHIR">${escHtml(ev.event_label)} →</span><br>`;
     });
     if (!fhirCells) fhirCells = '<span style="color:var(--muted);font-size:11px;">—</span>';
     // Find the first event that has the demographics instrument assigned
@@ -3094,9 +3109,9 @@ async function deleteEventConfirm(eventId) {
 }
 
 async function convertEventToFhir(patientId, eventName, btn) {
-  const origHTML = btn.innerHTML;
-  btn.textContent = '...';
-  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = '…';
+  btn.style.pointerEvents = 'none';
   try {
     const r = await fetch(`/api/patients/${encodeURIComponent(patientId)}/events/${encodeURIComponent(eventName)}/convert`, {
       method: 'POST',
@@ -3104,16 +3119,12 @@ async function convertEventToFhir(patientId, eventName, btn) {
     });
     if (!r.ok) { const e = await r.json(); throw new Error(e.detail || JSON.stringify(e)); }
     const result = await r.json();
-    btn.textContent = `✓ ${result.resource_count} resources`;
-    btn.style.background = 'var(--success)';
-    btn.style.color = 'white';
-    btn.style.borderColor = 'var(--success)';
-    btn.disabled = false;
-    btn.onclick = () => { showPage('page-fhir'); loadFhirIndex(); };
-    btn.title = `Bundle ID: ${result.bundle_id}`;
+    showToast(`Converted: ${result.resource_count} FHIR resources generated.`, 'success');
+    showPage('page-fhir');
+    loadFhirIndex();
   } catch(e) {
-    btn.innerHTML = origHTML;
-    btn.disabled = false;
+    btn.textContent = origText;
+    btn.style.pointerEvents = '';
     showToast('Convert failed: ' + e.message, 'error');
   }
 }

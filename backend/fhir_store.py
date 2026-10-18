@@ -376,6 +376,23 @@ def count_resources() -> int:
     return int(row["n"])
 
 
+def clear_all_resources() -> int:
+    """Delete every FHIR resource file and wipe the index. Returns count deleted."""
+    with _index_conn() as conn:
+        rows = conn.execute("SELECT id FROM fhir_index").fetchall()
+        count = len(rows)
+        for row in rows:
+            path = FHIR_DIR / f"{row['id']}.json"
+            if path.exists():
+                path.unlink()
+        conn.execute("DELETE FROM fhir_index")
+    # Also remove any JSON files not in the index (orphans)
+    if FHIR_DIR.exists():
+        for p in FHIR_DIR.glob("*.json"):
+            p.unlink()
+    return count
+
+
 def _purge_orphaned_index_entries() -> int:
     """
     Remove index rows whose backing JSON file no longer exists.
