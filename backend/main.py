@@ -651,10 +651,12 @@ _FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 if _FRONTEND_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=_FRONTEND_DIR), name="static")
 
+    _NO_CACHE = {"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"}
+
     @app.get("/")
     async def serve_index() -> FileResponse:
-        return FileResponse(_FRONTEND_DIR / "index.html")
+        return FileResponse(_FRONTEND_DIR / "index.html", headers=_NO_CACHE)
 
     @app.get("/{full_path:path}")
     async def catch_all(full_path: str) -> FileResponse:  # noqa: ARG001
-        return FileResponse(_FRONTEND_DIR / "index.html")
+        return FileResponse(_FRONTEND_DIR / "index.html", headers=_NO_CACHE)

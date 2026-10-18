@@ -57,7 +57,9 @@ a:hover { text-decoration: underline; }
 }
 .nav-btn:hover, .nav-btn.active { background: rgba(255,255,255,.15); color: white; }
 .nav-btn.active { font-weight: 600; }
-.status-cell { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(0,0,0,0.1); cursor: pointer; display:inline-block; vertical-align:middle; }
+.status-cell { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(0,0,0,0.1); display:inline-block; vertical-align:middle; }
+.status-clickable { cursor: pointer; transition: transform .1s, box-shadow .1s; }
+.status-clickable:hover { transform: scale(1.25); box-shadow: 0 0 0 3px rgba(0,133,124,.35); }
 .status-grey   { background: #9CA3AF; }
 .status-red    { background: #EF4444; }
 .status-yellow { background: #F59E0B; }
@@ -2609,14 +2611,12 @@ function renderStatusGrid(patients, statusMap) {
   const grid = document.getElementById('status-grid');
   if (!patients.length) { grid.innerHTML = '<div style="color:var(--muted);padding:16px;">No patients.</div>'; return; }
 
-  // Use first patient's status to get event/instrument structure
   const sample = statusMap[patients[0].patient_id];
   if (!sample) { grid.innerHTML = '<div style="color:var(--muted);padding:16px;">No status data.</div>'; return; }
 
   const events = sample.events || [];
   const instrumentsByEvent = sample.instruments_by_event || {};
 
-  // Build header rows
   let headerRow1 = '<th style="min-width:90px;">NHI</th><th style="min-width:140px;">Name</th>';
   let headerRow2 = '<th></th><th></th>';
   events.forEach(ev => {
@@ -2638,45 +2638,71 @@ function renderStatusGrid(patients, statusMap) {
     const nhi = escHtml(p.nhi_number || '');
     const name = escHtml((p.family_name || '') + ', ' + (p.given_names || ''));
     let cells = '';
-    let fhirButtons = '';
+    let fhirCells = '';
     events.forEach(ev => {
       const insts = evInsts[ev.unique_event_name] || instrumentsByEvent[ev.unique_event_name] || [];
       if (!insts.length) return;
       const evCompletion = (completion[ev.unique_event_name]) || {};
       insts.forEach((inst, i) => {
         const val = evCompletion[inst] !== undefined ? evCompletion[inst] : null;
-        cells += `<td style="text-align:center;padding:0;${i===0?'border-left:2px solid var(--border)':''}">
-          ${renderStatusCell(val, p.patient_id, ev.unique_event_name, inst)}
+        const cls = val === '2' ? 'status-green' : val === '1' ? 'status-yellow' : val === '0' ? 'status-red' : 'status-grey';
+        const tip = val === '2' ? 'Complete' : val === '1' ? 'Unverified' : val === '0' ? 'Incomplete' : 'Not started';
+        // Use data attributes — no inline JS string interpolation; click handled by delegated listener
+        cells += `<td style="text-align:center;padding:4px 2px;${i===0?'border-left:2px solid var(--border)':''}">
+          <span class="status-cell ${cls} status-clickable"
+            data-patient="${p.patient_id}"
+            data-event="${ev.unique_event_name}"
+            data-instrument="${inst}"
+            title="${escHtml(inst)}: ${tip} — click to enter data"></span>
         </td>`;
       });
-      // Show a convert button for this event if any instrument has data
       const hasData = Object.values(evCompletion).some(v => v !== null);
       if (hasData) {
-        fhirButtons += `<button id="fhir-btn-${escHtml(p.patient_id)}-${escHtml(ev.unique_event_name)}"
-          class="btn btn-sm" style="display:block;width:100%;margin-bottom:2px;font-size:11px;background:var(--fhir-light);color:var(--fhir-orange);border-color:var(--fhir-orange);"
-          onclick="convertEventToFhir('${escHtml(p.patient_id)}','${escHtml(ev.unique_event_name)}',this)">
-          ${escHtml(ev.event_label)} →
-        </button>`;
+        fhirCells += `<span class="fhir-convert-btn"
+          data-patient="${p.patient_id}"
+          data-event="${ev.unique_event_name}"
+          style="display:inline-block;margin-bottom:2px;font-size:11px;cursor:pointer;color:var(--fhir-orange);text-decoration:underline;"
+          title="Convert ${escHtml(ev.event_label)} to FHIR">${escHtml(ev.event_label)} →</span><br>`;
       }
     });
-    if (!fhirButtons) fhirButtons = '<span style="color:var(--muted);font-size:11px;">—</span>';
+    if (!fhirCells) fhirCells = '<span style="color:var(--muted);font-size:11px;">—</span>';
     rows += `<tr>
       <td style="font-family:monospace;font-size:12px;padding:6px 8px;">
-        <button class="btn btn-secondary btn-sm" style="font-family:monospace;font-size:11px;" onclick="openPatientTimeline('${p.patient_id}','${p.nhi_number || ''}',this)">${nhi}</button>
+        <span class="nhi-link" data-patient="${p.patient_id}" data-nhi="${escHtml(p.nhi_number || '')}"
+          style="cursor:pointer;color:var(--nz-teal);text-decoration:underline;font-size:11px;">${nhi}</span>
       </td>
       <td style="font-size:12px;padding:6px 8px;">${name}</td>
       ${cells}
-      <td style="border-left:2px solid var(--border);padding:4px 8px;vertical-align:top;">${fhirButtons}</td>
+      <td style="border-left:2px solid var(--border);padding:4px 8px;vertical-align:top;">${fhirCells}</td>
     </tr>`;
   });
 
-  grid.innerHTML = `<table style="border-collapse:collapse;width:100%;font-size:12px;">
+  grid.innerHTML = `<p style="font-size:12px;color:var(--muted);margin-bottom:8px;">Click a circle to open the data entry form for that instrument.</p>
+  <table style="border-collapse:collapse;width:100%;font-size:12px;">
     <thead>
       <tr style="background:#f8fafc;">${headerRow1}</tr>
       <tr style="background:#f8fafc;">${headerRow2}</tr>
     </thead>
     <tbody>${rows}</tbody>
   </table>`;
+
+  // Delegated click listener — attaches once per render; handles circles, NHI links, FHIR buttons
+  grid.addEventListener('click', function handleGridClick(e) {
+    const circle = e.target.closest('.status-clickable');
+    if (circle) {
+      openInstrumentForm(circle.dataset.patient, circle.dataset.event, circle.dataset.instrument);
+      return;
+    }
+    const nhi = e.target.closest('.nhi-link');
+    if (nhi) {
+      openPatientTimeline(nhi.dataset.patient, nhi.dataset.nhi, nhi);
+      return;
+    }
+    const fhir = e.target.closest('.fhir-convert-btn');
+    if (fhir) {
+      convertEventToFhir(fhir.dataset.patient, fhir.dataset.event, fhir);
+    }
+  });
 }
 
 function renderStatusCell(completionValue, patientId, eventName, instrumentName) {
@@ -2684,15 +2710,15 @@ function renderStatusCell(completionValue, patientId, eventName, instrumentName)
             : completionValue === '1' ? 'status-yellow'
             : completionValue === '0' ? 'status-red'
             : 'status-grey';
-  const title = completionValue === '2' ? 'Complete'
-              : completionValue === '1' ? 'Unverified'
-              : completionValue === '0' ? 'Incomplete'
-              : 'Not started';
-  return `<button style="background:none;border:none;cursor:pointer;width:100%;padding:6px;display:flex;justify-content:center;align-items:center;"
-    title="${escHtml(instrumentName)}: ${title} — click to enter data"
-    onclick="openInstrumentForm('${escHtml(patientId)}','${escHtml(eventName)}','${escHtml(instrumentName)}')">
-    <span class="status-cell ${cls}"></span>
-  </button>`;
+  const tip = completionValue === '2' ? 'Complete'
+            : completionValue === '1' ? 'Unverified'
+            : completionValue === '0' ? 'Incomplete'
+            : 'Not started';
+  return `<span class="status-cell ${cls} status-clickable"
+    data-patient="${patientId}"
+    data-event="${eventName}"
+    data-instrument="${instrumentName}"
+    title="${escHtml(instrumentName)}: ${tip} — click to enter data"></span>`;
 }
 
 async function openPatientTimeline(patientId, nhi, btn) {
