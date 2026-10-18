@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>NZ FHIR Clinical Demo</title>
+<title>NZ REDCap–FHIR Simulator</title>
 <style>
 /* ===== Reset & Base ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -296,7 +296,7 @@ pre.fhir-json {
 <header class="header">
   <div class="header-logo">
     <span class="logo-badge">NZ</span>
-    FHIR Clinical Demo
+    REDCap–FHIR Simulator
   </div>
   <nav class="header-nav">
     <button class="nav-btn active" onclick="showPage('page-home')">Dashboard</button>
@@ -324,19 +324,19 @@ pre.fhir-json {
 <!-- ===== DASHBOARD ===== -->
 <main class="page active" id="page-home">
   <div style="margin-bottom:24px;">
-    <h1 style="font-size:22px;font-weight:700;color:var(--nz-dark);">NZ FHIR Exploration Platform</h1>
-    <p style="color:var(--muted);margin-top:4px;">FHIR R4 &bull; NZ Base IG &bull; SNOMED-CT &bull; LOINC &bull; NZ Ethnicity &bull; NHI identifiers</p>
+    <h1 style="font-size:22px;font-weight:700;color:var(--nz-dark);">NZ REDCap–FHIR Simulator</h1>
+    <p style="color:var(--muted);margin-top:4px;">REDCap instruments &bull; longitudinal events &bull; FHIR R4 &bull; NZ Base IG &bull; SNOMED-CT &bull; LOINC &bull; NHI identifiers</p>
   </div>
 
   <div class="two-col" style="margin-bottom:24px;">
     <div class="card">
-      <div class="card-header"><span style="font-size:20px;">🏥</span><h2>Clinical Records</h2></div>
+      <div class="card-header"><span style="font-size:20px;">🏥</span><h2>Patients</h2></div>
       <div class="card-body">
         <div style="font-size:36px;font-weight:800;color:var(--nz-teal);" id="stat-records">—</div>
-        <div style="color:var(--muted);margin-top:4px;">Patient encounter records stored</div>
+        <div style="color:var(--muted);margin-top:4px;">Enrolled patients with instrument data</div>
         <div style="margin-top:16px;">
           <button class="btn btn-primary" onclick="showPage('page-status');loadRecordStatusDashboard();openAddPatientModal()">Add Patient</button>
-          <button class="btn btn-secondary" onclick="showPage('page-status');loadRecordStatusDashboard()">View Patients</button>
+          <button class="btn btn-secondary" onclick="showPage('page-status');loadRecordStatusDashboard()">Record Status</button>
         </div>
       </div>
     </div>
@@ -356,13 +356,14 @@ pre.fhir-json {
     <div class="card-header"><h2>Platform Overview</h2></div>
     <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:20px;">
       <div>
-        <div style="font-weight:700;color:var(--nz-teal);margin-bottom:6px;">Data Entry</div>
+        <div style="font-weight:700;color:var(--nz-teal);margin-bottom:6px;">REDCap Data Model</div>
         <div style="font-size:12px;color:var(--muted);line-height:1.8;">
-          REDCap-style clinical forms<br/>
-          NZ NHI patient identification<br/>
-          NZ ethnicity level-2 coding<br/>
-          GP/PHO linkage<br/>
-          Vitals, labs, meds, allergies
+          Patients × Events × Instruments<br/>
+          Instrument-level completion tracking<br/>
+          Grey / red / yellow / green status circles<br/>
+          Longitudinal event designation matrix<br/>
+          CDISC missing-data codes<br/>
+          Branching logic per field
         </div>
       </div>
       <div>
@@ -373,7 +374,7 @@ pre.fhir-json {
           Observation (vitals + labs)<br/>
           Condition, MedicationStatement<br/>
           AllergyIntolerance, Immunization<br/>
-          Composition (clinical note)
+          Composition &bull; versioned _history
         </div>
       </div>
       <div>
@@ -393,7 +394,8 @@ pre.fhir-json {
           HL7 FHIR R4 (v4.0.1)<br/>
           NZ Base IG profiles<br/>
           Transaction Bundles<br/>
-          FHIR REST API<br/>
+          meta.versionId + _history API<br/>
+          Deterministic resource IDs<br/>
           application/fhir+json
         </div>
       </div>
@@ -404,12 +406,13 @@ pre.fhir-json {
     <div class="card-header"><h2>Quick Start</h2></div>
     <div class="card-body">
       <ol style="padding-left:20px;line-height:2;font-size:13px;color:var(--muted);">
-        <li>Click <strong>New Encounter</strong> to enter clinical data for a patient</li>
-        <li>Fill in demographics, vitals, conditions, medications, and labs</li>
-        <li>Save the record — it is persisted as raw clinical JSON in SQLite</li>
-        <li>From the <strong>Patient Records</strong> list, click <strong>Convert to FHIR</strong></li>
-        <li>The system generates a FHIR R4 Transaction Bundle with all resources</li>
-        <li>Browse and search raw FHIR JSON in the <strong>FHIR Store</strong> tab</li>
+        <li>Click <strong>+ Add Patient</strong> and enter NHI, name, and date of birth</li>
+        <li>Open <strong>Record Status</strong> — one row per patient, one column per instrument</li>
+        <li>Click any coloured circle (grey = not started) to open that instrument's form</li>
+        <li>Fill in fields, set the <em>Form Status</em> (red / yellow / green), then save</li>
+        <li>Click <strong>Convert to FHIR</strong> on an event row to generate a FHIR R4 Bundle</li>
+        <li>Re-converting increments <code>meta.versionId</code>; prior versions are kept in <code>_history</code></li>
+        <li>Browse, search, and inspect raw FHIR JSON in the <strong>FHIR Store</strong> tab</li>
       </ol>
     </div>
   </div>
@@ -419,7 +422,7 @@ pre.fhir-json {
 <main class="page" id="page-status">
   <div class="card">
     <div class="card-header">
-      <h2>Record Status Dashboard</h2>
+      <h2>Record Status — Patient × Event × Instrument</h2>
       <div style="display:flex;gap:8px;align-items:center;margin-left:auto;">
         <input id="status-search-nhi" type="text" placeholder="NHI" style="width:120px;"/>
         <input id="status-search-name" type="text" placeholder="Family name" style="width:160px;"/>
@@ -468,7 +471,7 @@ pre.fhir-json {
 <!-- ===== FHIR STORE ===== -->
 <main class="page" id="page-fhir">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
-    <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">FHIR Store</h1>
+    <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">FHIR Store <span style="font-size:13px;font-weight:400;color:var(--muted);">— versioned resources with _history</span></h1>
     <div id="hapi-status-bar" style="display:flex;align-items:center;gap:8px;font-size:13px;"></div>
     <button class="btn btn-sm" onclick="clearAllFhirResources()"
       style="margin-left:auto;background:#fee2e2;color:#dc2626;border-color:#fca5a5;">
@@ -615,7 +618,7 @@ pre.fhir-json {
 <main class="page" id="page-dict">
   <div style="margin-bottom:20px;">
     <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">REDCap Data Dictionary</h1>
-    <p style="color:var(--muted);margin-top:4px;">Machine-readable field definitions — 18-column REDCap format</p>
+    <p style="color:var(--muted);margin-top:4px;">Instrument field definitions in 18-column REDCap CSV format — includes branching logic, CDISC missing-data codes, and instrument-event designations</p>
   </div>
   <div class="card" style="margin-bottom:20px;">
     <div class="card-header">
