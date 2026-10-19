@@ -57,7 +57,7 @@ a:hover { text-decoration: underline; }
 }
 .nav-btn:hover, .nav-btn.active { background: rgba(255,255,255,.15); color: white; }
 .nav-btn.active { font-weight: 600; }
-.status-cell { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(0,0,0,0.1); display:inline-block; vertical-align:middle; }
+.status-cell { width: 28px; height: 28px; border-radius: 50%; border: 2px solid rgba(0,0,0,0.1); display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:rgba(0,0,0,0.45); vertical-align:middle; }
 .status-clickable { cursor: pointer; transition: transform .1s, box-shadow .1s; }
 .status-clickable:hover { transform: scale(1.25); box-shadow: 0 0 0 3px rgba(0,133,124,.35); }
 .status-grey   { background: #9CA3AF; }
@@ -253,7 +253,7 @@ pre.fhir-json {
 .step-line.done { background: var(--nz-green); }
 
 /* Missing data code UI */
-.btn-missing { font-size:10px; padding:3px 6px; background:var(--muted); color:white; border:none; border-radius:4px; cursor:pointer; flex-shrink:0; }
+.btn-missing { font-size:11px; padding:4px 8px; min-width:28px; min-height:28px; background:var(--muted); color:white; border:none; border-radius:4px; cursor:pointer; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; }
 .btn-missing:hover { background: var(--warn); }
 .missing-code-active { background: #FFF7ED !important; border-color: var(--warn) !important; color: var(--warn) !important; font-weight:700; }
 .missing-picker { position:absolute; background:white; border:1px solid var(--border); border-radius:6px; box-shadow:var(--shadow-lg); z-index:200; padding:8px; min-width:220px; max-height:280px; overflow-y:auto; font-size:12px; }
@@ -287,6 +287,40 @@ pre.fhir-json {
 .btn-info:hover { background:#163F6E; }
 .patient-banner { background:#EBF4FF; border:1px solid #BFD9F5; border-radius:6px; padding:10px 14px;
                   margin-bottom:16px; font-size:13px; }
+
+/* Screen-reader only utility */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+/* Focus visibility for all interactive elements */
+.btn:focus-visible,
+.nav-btn:focus-visible {
+  outline: 3px solid var(--nz-teal);
+  outline-offset: 2px;
+}
+.nav-btn:focus-visible {
+  outline-color: white;
+}
+.status-btn:focus-visible,
+.nhi-btn:focus-visible,
+.edit-btn:focus-visible,
+.fhir-convert-btn:focus-visible {
+  outline: 3px solid var(--nz-teal);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+
+/* FHIR tab active/inactive state via class (replaces inline JS style mutation) */
+.fhir-tab { padding:8px 20px; border:none; background:none; font-size:13px; font-weight:600; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; }
+.fhir-tab.active-local { color:var(--nz-teal); border-bottom-color:var(--nz-teal); }
+.fhir-tab.active-hapi  { color:var(--fhir-orange); border-bottom-color:var(--fhir-orange); }
+.fhir-tab.inactive     { color:var(--muted); }
+
+/* Status circle legend */
+.status-legend { display:flex; gap:16px; font-size:12px; color:var(--muted); margin-bottom:10px; align-items:center; flex-wrap:wrap; }
+.status-legend-item { display:flex; align-items:center; gap:5px; }
 </style>
 </head>
 <body>
@@ -321,8 +355,9 @@ pre.fhir-json {
   <div id="dp-body" style="padding:20px;"></div>
 </div>
 
+<main id="app-content">
 <!-- ===== DASHBOARD ===== -->
-<main class="page active" id="page-home">
+<section class="page active" id="page-home">
   <div style="margin-bottom:24px;">
     <h1 style="font-size:22px;font-weight:700;color:var(--nz-dark);">NZ REDCap–FHIR Simulator</h1>
     <p style="color:var(--muted);margin-top:4px;">REDCap instruments &bull; longitudinal events &bull; FHIR R4 &bull; NZ Base IG &bull; SNOMED-CT &bull; LOINC &bull; NHI identifiers</p>
@@ -416,16 +451,18 @@ pre.fhir-json {
       </ol>
     </div>
   </div>
-</main>
+</section>
 
 <!-- ===== RECORD STATUS DASHBOARD ===== -->
-<main class="page" id="page-status">
+<section class="page" id="page-status">
   <div class="card">
     <div class="card-header">
       <h2>Record Status — Patient × Event × Instrument</h2>
       <div style="display:flex;gap:8px;align-items:center;margin-left:auto;">
-        <input id="status-search-nhi" type="text" placeholder="NHI" style="width:120px;"/>
-        <input id="status-search-name" type="text" placeholder="Family name" style="width:160px;"/>
+        <label for="status-search-nhi" class="sr-only">Search by NHI</label>
+        <input id="status-search-nhi" type="text" placeholder="NHI" style="width:120px;" autocomplete="off"/>
+        <label for="status-search-name" class="sr-only">Search by family name</label>
+        <input id="status-search-name" type="text" placeholder="Family name" style="width:160px;" autocomplete="family-name"/>
         <button class="btn btn-primary btn-sm" onclick="loadRecordStatusDashboard()">Load</button>
         <button class="btn btn-secondary btn-sm" onclick="openAddPatientModal()">+ Add Patient</button>
       </div>
@@ -434,10 +471,10 @@ pre.fhir-json {
       <div id="status-grid" style="overflow-x:auto;"></div>
     </div>
   </div>
-</main>
+</section>
 
 <!-- ===== INSTRUMENT DATA ENTRY ===== -->
-<main class="page" id="page-instrument">
+<section class="page" id="page-instrument">
   <!-- Context banner — makes it clear this is a data-entry form, not the dashboard -->
   <div id="instrument-context-banner" style="background:var(--nz-dark);color:white;padding:10px 20px;border-radius:var(--radius) var(--radius) 0 0;display:flex;align-items:center;gap:12px;margin-bottom:0;">
     <button class="btn btn-sm" onclick="showPage('page-status')" style="background:rgba(255,255,255,.15);color:white;border-color:rgba(255,255,255,.3);">← Record Status</button>
@@ -466,10 +503,10 @@ pre.fhir-json {
       <span id="instrument-save-status" style="font-size:12px;color:var(--muted);margin-left:8px;"></span>
     </div>
   </div>
-</main>
+</section>
 
 <!-- ===== FHIR STORE ===== -->
-<main class="page" id="page-fhir">
+<section class="page" id="page-fhir">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
     <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">FHIR Store <span style="font-size:13px;font-weight:400;color:var(--muted);">— versioned resources with _history</span></h1>
     <div id="hapi-status-bar" style="display:flex;align-items:center;gap:8px;font-size:13px;"></div>
@@ -480,19 +517,17 @@ pre.fhir-json {
   </div>
 
   <!-- Tab bar -->
-  <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px;">
-    <button id="tab-local" onclick="switchFhirTab('local')"
-      style="padding:8px 20px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid var(--nz-teal);margin-bottom:-2px;color:var(--nz-teal);">
+  <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px;" role="tablist">
+    <button id="tab-local" role="tab" aria-selected="true" aria-controls="fhir-panel-local" onclick="switchFhirTab('local')" class="fhir-tab active-local">
       Local Store
     </button>
-    <button id="tab-hapi" onclick="switchFhirTab('hapi')"
-      style="padding:8px 20px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--muted);">
+    <button id="tab-hapi" role="tab" aria-selected="false" aria-controls="fhir-panel-hapi" onclick="switchFhirTab('hapi')" class="fhir-tab inactive">
       HAPI FHIR Server
     </button>
   </div>
 
   <!-- ── LOCAL STORE panel ────────────────────────────────── -->
-  <div id="fhir-panel-local">
+  <div id="fhir-panel-local" role="tabpanel" aria-labelledby="tab-local">
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
       <select id="fhir-type-filter" style="max-width:180px;">
         <option value="">All resource types</option>
@@ -501,9 +536,13 @@ pre.fhir-json {
         <option>MedicationStatement</option><option>AllergyIntolerance</option>
         <option>Immunization</option><option>Composition</option>
       </select>
-      <input type="text" id="fhir-name-filter" placeholder="Patient name..." style="max-width:180px;"/>
-      <input type="text" id="fhir-nhi-filter" placeholder="NHI..." style="max-width:130px;font-family:monospace;"/>
+      <label for="fhir-name-filter" class="sr-only">Filter by patient name</label>
+      <input type="text" id="fhir-name-filter" placeholder="Patient name..." style="max-width:180px;" autocomplete="off"/>
+      <label for="fhir-nhi-filter" class="sr-only">Filter by NHI</label>
+      <input type="text" id="fhir-nhi-filter" placeholder="NHI..." style="max-width:130px;font-family:monospace;" autocomplete="off"/>
+      <label for="fhir-from-filter" class="sr-only">From date</label>
       <input type="date" id="fhir-from-filter" style="max-width:150px;"/>
+      <label for="fhir-to-filter" class="sr-only">To date</label>
       <input type="date" id="fhir-to-filter" style="max-width:150px;"/>
       <button class="btn btn-secondary btn-sm" onclick="loadFhirIndex()">Search</button>
     </div>
@@ -511,9 +550,9 @@ pre.fhir-json {
     <div class="card" style="margin-bottom:20px;">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Type</th><th>ID</th><th>Patient</th><th>NHI</th><th>Date</th><th>Summary</th><th>Action</th></tr></thead>
+          <thead><tr><th scope="col">Type</th><th scope="col">ID</th><th scope="col">Patient</th><th scope="col">NHI</th><th scope="col">Date</th><th scope="col">Ver</th><th scope="col">Summary</th><th scope="col">Actions</th></tr></thead>
           <tbody id="fhir-tbody">
-            <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
+            <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -521,7 +560,7 @@ pre.fhir-json {
   </div>
 
   <!-- ── HAPI SERVER panel ────────────────────────────────── -->
-  <div id="fhir-panel-hapi" style="display:none;">
+  <div id="fhir-panel-hapi" role="tabpanel" aria-labelledby="tab-hapi" style="display:none;">
 
     <!-- Server info bar -->
     <div class="card" style="margin-bottom:16px;padding:14px 20px;">
@@ -612,10 +651,10 @@ pre.fhir-json {
       <pre class="fhir-json" id="fhir-json-pre"></pre>
     </div>
   </div>
-</main>
+</section>
 
 <!-- ===== DATA DICTIONARY ===== -->
-<main class="page" id="page-dict">
+<section class="page" id="page-dict">
   <div style="margin-bottom:20px;">
     <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">REDCap Data Dictionary</h1>
     <p style="color:var(--muted);margin-top:4px;">Instrument field definitions in 18-column REDCap CSV format — includes branching logic, CDISC missing-data codes, and instrument-event designations</p>
@@ -658,10 +697,10 @@ pre.fhir-json {
       <div id="iem-matrix"></div>
     </div>
   </details>
-</main>
+</section>
 
 <!-- ===== PROJECT SETUP ===== -->
-<main class="page" id="page-setup">
+<section class="page" id="page-setup">
   <div style="margin-bottom:20px;">
     <h1 style="font-size:20px;font-weight:700;color:var(--nz-dark);">Project Setup</h1>
     <p style="color:var(--muted);margin-top:4px;">Manage longitudinal events and instrument designations</p>
@@ -720,7 +759,9 @@ pre.fhir-json {
       </div>
     </div>
   </div>
-</main>
+</section>
+
+</main><!-- /app-content -->
 
 </div><!-- /app-shell -->
 
@@ -875,6 +916,15 @@ async function loadRefData() {
     populateDropdowns();
   } catch(e) {
     console.error('Failed to load ref data:', e);
+    let banner = document.getElementById('_ref-error-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = '_ref-error-banner';
+      banner.className = 'alert alert-error';
+      banner.style.cssText = 'position:sticky;top:56px;z-index:99;border-radius:0;margin:0;';
+      banner.innerHTML = '⚠ Reference data failed to load — some dropdowns may be empty. <button onclick="document.getElementById(\'_ref-error-banner\').remove();loadRefData();" class="btn btn-sm btn-secondary" style="margin-left:8px;">Retry</button>';
+      document.querySelector('.app-shell').insertBefore(banner, document.querySelector('.page'));
+    }
   }
 }
 
@@ -1243,7 +1293,7 @@ async function deletePatient(patientId) {
     if (!r.ok && r.status !== 204) throw new Error(await r.text());
     loadRecordStatusDashboard();
     showToast('Patient deleted.');
-  } catch(e) { alert('Delete failed: ' + e.message); }
+  } catch(e) { showToast('Delete failed: ' + e.message, 'error'); }
 }
 
 function buildDemographicsFormHTML(patient) {
@@ -1261,19 +1311,20 @@ function buildDemographicsFormHTML(patient) {
         <label>NHI Number <span style="color:var(--danger)">*</span></label>
         <input id="m-nhi_number" type="text" value="${p.nhi_number||''}" maxlength="7" required
           placeholder="e.g. ZAA0001" style="font-family:monospace;text-transform:uppercase;"
-          pattern="[A-HJ-NP-Za-hj-np-z]{3}([0-9]{4}|[0-9]{2}[A-HJ-NP-Za-hj-np-z]{2})"/>
+          pattern="[A-HJ-NP-Za-hj-np-z]{3}([0-9]{4}|[0-9]{2}[A-HJ-NP-Za-hj-np-z]{2})"
+          autocomplete="off"/>
       </div>
       <div class="form-group">
         <label>Family Name <span style="color:var(--danger)">*</span></label>
-        <input id="m-family_name" type="text" value="${p.family_name||''}" required/>
+        <input id="m-family_name" type="text" value="${p.family_name||''}" required autocomplete="family-name"/>
       </div>
       <div class="form-group">
         <label>Given Names <span style="color:var(--danger)">*</span></label>
-        <input id="m-given_names" type="text" value="${p.given_names||''}" required/>
+        <input id="m-given_names" type="text" value="${p.given_names||''}" required autocomplete="given-name"/>
       </div>
       <div class="form-group">
         <label>Date of Birth <span style="color:var(--danger)">*</span></label>
-        <input id="m-date_of_birth" type="date" value="${p.date_of_birth||''}" required/>
+        <input id="m-date_of_birth" type="date" value="${p.date_of_birth||''}" required autocomplete="bday"/>
       </div>
       <div class="form-group">
         <label>Sex <span style="color:var(--danger)">*</span></label>
@@ -1303,15 +1354,15 @@ function buildDemographicsFormHTML(patient) {
     <div class="form-grid">
       <div class="form-group">
         <label>Phone</label>
-        <input id="m-phone" type="text" value="${p.phone||''}"/>
+        <input id="m-phone" type="tel" value="${p.phone||''}" autocomplete="tel"/>
       </div>
       <div class="form-group">
         <label>Email</label>
-        <input id="m-email" type="email" value="${p.email||''}"/>
+        <input id="m-email" type="email" value="${p.email||''}" autocomplete="email"/>
       </div>
       <div class="form-group">
         <label>Street Address</label>
-        <input id="m-address_street" type="text" value="${p.address?.street||''}"/>
+        <input id="m-address_street" type="text" value="${p.address?.street||''}" autocomplete="street-address"/>
       </div>
       <div class="form-group">
         <label>Suburb</label>
@@ -1319,11 +1370,11 @@ function buildDemographicsFormHTML(patient) {
       </div>
       <div class="form-group">
         <label>City</label>
-        <input id="m-address_city" type="text" value="${p.address?.city||''}"/>
+        <input id="m-address_city" type="text" value="${p.address?.city||''}" autocomplete="address-level2"/>
       </div>
       <div class="form-group">
         <label>Postcode</label>
-        <input id="m-address_postcode" type="text" value="${p.address?.postcode||''}"/>
+        <input id="m-address_postcode" type="text" value="${p.address?.postcode||''}" autocomplete="postal-code"/>
       </div>
       <div class="form-group">
         <label>Region</label>
@@ -1553,7 +1604,7 @@ function addModalCondition() {
   const code = document.getElementById('me-cond_code')?.value;
   const status = document.getElementById('me-cond_status')?.value || 'active';
   const onset = document.getElementById('me-cond_onset')?.value || null;
-  if (!code) { alert('Select a condition code first.'); return; }
+  if (!code) { showToast('Select a condition code first.', 'error'); return; }
   const display = refData.conditions[code] || code;
   modalEncounterState.conditions.push({ snomed_code: code, display, status, onset_date: onset });
   renderModalConditions();
@@ -1833,7 +1884,7 @@ async function submitRecord() {
   if (other) clinical_notes.push({ section:'other', text: other });
 
   const nhi = document.getElementById('nhi_number').value.trim().toUpperCase();
-  if (!nhi) { alert('NHI number is required.'); return; }
+  if (!nhi) { showToast('NHI number is required.', 'error'); return; }
 
   const payload = {
     nhi_number: nhi,
@@ -2046,7 +2097,7 @@ async function convertRecord(recordId, btn) {
     await loadStats();
     refreshHapiStatus();
   } catch(e) {
-    alert('FHIR conversion error: ' + e.message);
+    showToast('FHIR conversion error: ' + e.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = '⚡ FHIR';
@@ -2082,7 +2133,7 @@ async function convertPatient(patientId, btn) {
     await loadStats();
     refreshHapiStatus();
   } catch(e) {
-    alert('FHIR conversion error: ' + e.message);
+    showToast('FHIR conversion error: ' + e.message, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = '⚡ FHIR';
@@ -2229,14 +2280,14 @@ async function loadFhirIndex() {
   if (params.length) url = `/api/fhir?${params.join('&')}&limit=200`;
 
   const tbody = document.getElementById('fhir-tbody');
-  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;"><span class="spinner"></span></td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;"><span class="spinner"></span></td></tr>';
 
   const countBar = document.getElementById('fhir-count-bar');
   try {
     const items = await apiGet(url);
     countBar.textContent = `Showing ${items.length} FHIR resource${items.length !== 1 ? 's' : ''}`;
     if (!items.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">No FHIR resources found. Convert a clinical record first.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">No FHIR resources yet. Open Record Status, fill in instrument data, then click Convert.</td></tr>';
       return;
     }
     tbody.innerHTML = '';
@@ -2250,20 +2301,22 @@ async function loadFhirIndex() {
       const color = typeColors[item.resource_type] || '#374151';
       tr.innerHTML = `
         <td><span style="background:${color};color:white;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;">${item.resource_type}</span></td>
-        <td><code style="font-size:11px;">${item.id.substring(0,8)}…</code></td>
+        <td><code style="font-size:11px;" title="${item.id}">${item.id.substring(0,8)}…</code></td>
         <td>${item.subject_name || '—'}</td>
         <td>${item.nhi_number ? `<span class="nhi-pill">${item.nhi_number}</span>` : '—'}</td>
         <td>${item.date || '—'}</td>
+        <td style="font-size:11px;color:var(--muted);text-align:center;">${item.version_id ? `<span title="Version ${item.version_id}">v${item.version_id}</span>` : '—'}</td>
         <td style="max-width:200px;font-size:12px;color:var(--muted);">${item.summary || ''}</td>
-        <td>
+        <td style="white-space:nowrap;">
           <button class="btn btn-fhir btn-sm" onclick="loadAndShowFhir('${item.id}')">View JSON</button>
+          ${item.version_id > 1 ? `<button class="btn btn-secondary btn-sm" style="margin-left:4px;" onclick="loadAndShowFhirHistory('${item.id}')">History</button>` : ''}
         </td>
       `;
       tbody.appendChild(tr);
     });
   } catch(e) {
     countBar.textContent = '';
-    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--danger);padding:16px;">Error: ${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--danger);padding:16px;">Error: ${e.message}</td></tr>`;
   }
 }
 
@@ -2284,6 +2337,22 @@ async function loadAndShowFhir(resourceId) {
   }
 }
 
+async function loadAndShowFhirHistory(resourceId) {
+  const viewer = document.getElementById('fhir-viewer');
+  const pre = document.getElementById('fhir-json-pre');
+  const title = document.getElementById('fhir-viewer-title');
+  pre.innerHTML = '<span class="spinner"></span>';
+  viewer.style.display = 'block';
+  title.textContent = `${resourceId} — _history`;
+  viewer.scrollIntoView({ behavior:'smooth' });
+  try {
+    const history = await apiGet('/api/fhir/' + resourceId + '/_history');
+    pre.innerHTML = syntaxHighlight(JSON.stringify(history, null, 2));
+  } catch(e) {
+    pre.textContent = 'Error: ' + e.message;
+  }
+}
+
 function formatFhirPanel(resource) {
   const rtype = resource.resourceType || 'Resource';
   return `<div class="fhir-panel" style="border-radius:8px;overflow:hidden;">
@@ -2294,7 +2363,7 @@ function formatFhirPanel(resource) {
 
 function copyFhirJson() {
   const text = document.getElementById('fhir-json-pre').textContent;
-  navigator.clipboard.writeText(text).then(() => alert('Copied to clipboard'));
+  navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard', 'success'));
 }
 
 // JSON syntax highlighter
@@ -2333,9 +2402,10 @@ function closeDetailPanel() {
 async function loadStats() {
   try {
     const s = await apiGet('/api/stats');
-    document.getElementById('stat-records').textContent = s.clinical_records;
+    document.getElementById('stat-records').textContent = s.patients ?? s.clinical_records;
     document.getElementById('stat-fhir').textContent = s.fhir_resources;
-    document.getElementById('header-stats').textContent = `${s.clinical_records} records · ${s.fhir_resources} FHIR resources`;
+    const pLabel = s.patients !== undefined ? `${s.patients} patients` : `${s.clinical_records} records`;
+    document.getElementById('header-stats').textContent = `${pLabel} · ${s.fhir_resources} FHIR resources`;
   } catch(e) {
     document.getElementById('header-stats').textContent = 'Backend offline';
   }
@@ -2350,10 +2420,11 @@ function switchFhirTab(tab) {
 
   const tabLocal = document.getElementById('tab-local');
   const tabHapi  = document.getElementById('tab-hapi');
-  tabLocal.style.borderBottomColor = tab === 'local' ? 'var(--nz-teal)' : 'transparent';
-  tabLocal.style.color = tab === 'local' ? 'var(--nz-teal)' : 'var(--muted)';
-  tabHapi.style.borderBottomColor  = tab === 'hapi'  ? 'var(--fhir-orange)' : 'transparent';
-  tabHapi.style.color = tab === 'hapi' ? 'var(--fhir-orange)' : 'var(--muted)';
+
+  tabLocal.className = tab === 'local' ? 'fhir-tab active-local' : 'fhir-tab inactive';
+  tabHapi.className  = tab === 'hapi'  ? 'fhir-tab active-hapi'  : 'fhir-tab inactive';
+  tabLocal.setAttribute('aria-selected', tab === 'local' ? 'true' : 'false');
+  tabHapi.setAttribute('aria-selected',  tab === 'hapi'  ? 'true' : 'false');
 
   if (tab === 'hapi') {
     refreshHapiStatus();
@@ -2461,7 +2532,7 @@ async function hapiSearch() {
 // ============================================================
 async function hapiEverything(patientId) {
   const id = patientId || document.getElementById('hapi-everything-id').value.trim();
-  if (!id) { alert('Enter a Patient ID first.'); return; }
+  if (!id) { showToast('Enter a Patient ID first.', 'error'); return; }
   document.getElementById('hapi-everything-id').value = id;
   renderHapiResults(`/api/hapi/Patient/${id}/$everything`, `Patient/${id}/$everything`);
 }
@@ -2599,7 +2670,7 @@ async function loadRecordStatusDashboard() {
   const name = (document.getElementById('status-search-name') || {}).value || '';
   const grid = document.getElementById('status-grid');
   if (!grid) return;
-  grid.innerHTML = '<div style="color:var(--muted);padding:16px;">Loading...</div>';
+  grid.innerHTML = '<div style="padding:24px;text-align:center;"><span class="spinner"></span></div>';
   try {
     const params = new URLSearchParams({ limit: 50 });
     if (nhi) params.set('nhi', nhi);
@@ -2630,18 +2701,23 @@ function renderStatusGrid(patients, statusMap) {
   const events = sample.events || [];
   const instrumentsByEvent = sample.instruments_by_event || {};
 
-  let headerRow1 = '<th style="min-width:90px;">NHI</th><th style="min-width:140px;">Name</th><th></th>';
-  let headerRow2 = '<th></th><th></th><th style="font-size:10px;font-weight:400;color:var(--muted);padding:2px 4px;">edit</th>';
+  // Status symbol map — second signal alongside color (fixes 1.4.1 color-only)
+  const STATUS_SYMBOL = { '2': '✓', '1': '?', '0': '!', null: '—' };
+  const STATUS_LABEL  = { '2': 'Complete', '1': 'Unverified', '0': 'Incomplete', null: 'Not started' };
+
+  // Build header rows with correct scope attributes (fixes 1.3.1)
+  let headerRow1 = '<th scope="col" style="min-width:90px;">NHI</th><th scope="col" style="min-width:140px;">Name</th><th scope="col"></th>';
+  let headerRow2 = '<th scope="col"></th><th scope="col"></th><th scope="col" style="font-size:10px;font-weight:400;color:var(--muted);padding:2px 4px;">edit</th>';
   events.forEach(ev => {
     const insts = instrumentsByEvent[ev.unique_event_name] || [];
     if (!insts.length) return;
-    headerRow1 += `<th colspan="${insts.length}" style="text-align:center;border-left:2px solid var(--border);padding:4px 8px;font-size:12px;">${escHtml(ev.event_label)}</th>`;
+    headerRow1 += `<th colspan="${insts.length}" scope="colgroup" style="text-align:center;border-left:2px solid var(--border);padding:4px 8px;font-size:12px;">${escHtml(ev.event_label)}</th>`;
     insts.forEach((inst, i) => {
-      headerRow2 += `<th style="font-size:10px;font-weight:400;color:var(--muted);white-space:nowrap;padding:2px 4px;${i===0?'border-left:2px solid var(--border)':''}">${escHtml(inst)}</th>`;
+      headerRow2 += `<th scope="col" style="font-size:10px;font-weight:400;color:var(--muted);white-space:nowrap;padding:2px 4px;${i===0?'border-left:2px solid var(--border)':''}">${escHtml(inst)}</th>`;
     });
   });
-  headerRow1 += `<th style="border-left:2px solid var(--border);padding:4px 8px;font-size:12px;color:var(--fhir-orange);">FHIR</th>`;
-  headerRow2 += `<th style="border-left:2px solid var(--border);font-size:10px;font-weight:400;color:var(--muted);padding:2px 4px;">convert</th>`;
+  headerRow1 += `<th scope="col" style="border-left:2px solid var(--border);padding:4px 8px;font-size:12px;color:var(--fhir-orange);">FHIR</th>`;
+  headerRow2 += `<th scope="col" style="border-left:2px solid var(--border);font-size:10px;font-weight:400;color:var(--muted);padding:2px 4px;">convert</th>`;
 
   let rows = '';
   patients.forEach(p => {
@@ -2659,42 +2735,58 @@ function renderStatusGrid(patients, statusMap) {
       insts.forEach((inst, i) => {
         const val = evCompletion[inst] !== undefined ? evCompletion[inst] : null;
         const cls = val === '2' ? 'status-green' : val === '1' ? 'status-yellow' : val === '0' ? 'status-red' : 'status-grey';
-        const tip = val === '2' ? 'Complete' : val === '1' ? 'Unverified' : val === '0' ? 'Incomplete' : 'Not started';
-        // Use data attributes — no inline JS string interpolation; click handled by delegated listener
+        const symbol = STATUS_SYMBOL[val] ?? STATUS_SYMBOL[null];
+        const label = STATUS_LABEL[val] ?? STATUS_LABEL[null];
+        // Use <button> for keyboard accessibility (fixes 2.1.1, 4.1.2)
         cells += `<td style="text-align:center;padding:4px 2px;${i===0?'border-left:2px solid var(--border)':''}">
-          <span class="status-cell ${cls} status-clickable"
+          <button type="button" class="status-cell ${cls} status-clickable status-btn"
             data-patient="${p.patient_id}"
             data-event="${ev.unique_event_name}"
             data-instrument="${inst}"
-            title="${escHtml(inst)}: ${tip} — click to enter data"></span>
+            aria-label="${escHtml(inst)}: ${label} — click to open form"
+            title="${escHtml(inst)}: ${label}"
+            style="border:none;cursor:pointer;padding:0;">${symbol}</button>
         </td>`;
       });
-      fhirCells += `<span class="fhir-convert-btn"
+      // FHIR convert — use <button> for keyboard accessibility
+      fhirCells += `<button type="button" class="fhir-convert-btn"
         data-patient="${p.patient_id}"
         data-event="${ev.unique_event_name}"
-        style="display:inline-block;margin-bottom:2px;font-size:11px;cursor:pointer;color:var(--fhir-orange);text-decoration:underline;"
-        title="Convert ${escHtml(ev.event_label)} to FHIR">${escHtml(ev.event_label)} →</span><br>`;
+        aria-label="Convert ${escHtml(ev.event_label)} to FHIR"
+        style="display:inline-block;margin-bottom:2px;font-size:11px;cursor:pointer;color:var(--fhir-orange);text-decoration:underline;background:none;border:none;padding:0;"
+        title="Convert ${escHtml(ev.event_label)} to FHIR">${escHtml(ev.event_label)} →</button><br>`;
     });
     if (!fhirCells) fhirCells = '<span style="color:var(--muted);font-size:11px;">—</span>';
-    // Find the first event that has the demographics instrument assigned
     const demoEvent = events.find(ev => (evInsts[ev.unique_event_name] || []).includes('demographics'));
     const demoEventName = demoEvent ? demoEvent.unique_event_name : (events[0] ? events[0].unique_event_name : '');
     rows += `<tr>
       <td style="font-family:monospace;font-size:12px;padding:6px 8px;">
-        <span class="nhi-link" data-patient="${p.patient_id}" data-nhi="${escHtml(p.nhi_number || '')}"
-          style="cursor:pointer;color:var(--nz-teal);text-decoration:underline;font-size:11px;">${nhi}</span>
+        <button type="button" class="nhi-btn nhi-link" data-patient="${p.patient_id}" data-nhi="${escHtml(p.nhi_number || '')}"
+          aria-label="View timeline for NHI ${nhi}" aria-expanded="false"
+          style="font-family:monospace;font-size:11px;color:var(--nz-teal);text-decoration:underline;background:none;border:none;cursor:pointer;padding:0;">${nhi}</button>
       </td>
       <td style="font-size:12px;padding:6px 8px;">${name}</td>
       <td style="padding:4px 6px;">
-        <span class="status-clickable" data-patient="${p.patient_id}" data-event="${demoEventName}" data-instrument="demographics"
-          style="font-size:11px;color:var(--nz-teal);cursor:pointer;white-space:nowrap;" title="Edit patient demographics">✎ Edit</span>
+        <button type="button" class="edit-btn status-clickable" data-patient="${p.patient_id}" data-event="${demoEventName}" data-instrument="demographics"
+          aria-label="Edit demographics for ${escHtml(p.given_names || '')} ${escHtml(p.family_name || '')}"
+          style="font-size:11px;color:var(--nz-teal);cursor:pointer;white-space:nowrap;background:none;border:none;padding:0;">✎ Edit</button>
       </td>
       ${cells}
       <td style="border-left:2px solid var(--border);padding:4px 8px;vertical-align:top;">${fhirCells}</td>
     </tr>`;
   });
 
-  grid.innerHTML = `<p style="font-size:12px;color:var(--muted);margin-bottom:8px;">Click a circle to open the data entry form for that instrument.</p>
+  // Legend (fixes H6 — recognition not recall)
+  const legendHtml = `<div class="status-legend" role="note" aria-label="Status circle legend">
+    <strong style="font-size:12px;color:var(--text);">Legend:</strong>
+    <span class="status-legend-item"><span class="status-cell status-grey" style="width:18px;height:18px;font-size:9px;border:none;">—</span> Not started</span>
+    <span class="status-legend-item"><span class="status-cell status-red"  style="width:18px;height:18px;font-size:9px;border:none;">!</span> Incomplete</span>
+    <span class="status-legend-item"><span class="status-cell status-yellow" style="width:18px;height:18px;font-size:9px;border:none;">?</span> Unverified</span>
+    <span class="status-legend-item"><span class="status-cell status-green" style="width:18px;height:18px;font-size:9px;border:none;">✓</span> Complete</span>
+  </div>`;
+
+  grid.innerHTML = legendHtml + `
+  <p style="font-size:12px;color:var(--muted);margin-bottom:8px;">Click a circle to open the data entry form for that instrument. Press Enter or Space when focused via keyboard.</p>
   <table style="border-collapse:collapse;width:100%;font-size:12px;">
     <thead>
       <tr style="background:#f8fafc;">${headerRow1}</tr>
@@ -2703,7 +2795,7 @@ function renderStatusGrid(patients, statusMap) {
     <tbody>${rows}</tbody>
   </table>`;
 
-  // Delegated click listener — attaches once per render; handles circles, NHI links, FHIR buttons
+  // Delegated click listener
   grid.addEventListener('click', function handleGridClick(e) {
     const circle = e.target.closest('.status-clickable');
     if (circle) {
@@ -2712,6 +2804,8 @@ function renderStatusGrid(patients, statusMap) {
     }
     const nhi = e.target.closest('.nhi-link');
     if (nhi) {
+      const expanded = nhi.getAttribute('aria-expanded') === 'true';
+      nhi.setAttribute('aria-expanded', expanded ? 'false' : 'true');
       openPatientTimeline(nhi.dataset.patient, nhi.dataset.nhi, nhi);
       return;
     }
@@ -2827,12 +2921,19 @@ async function openInstrumentForm(patientId, eventName, instrument) {
   const dictFields = (refData.dataDictionary || []).filter(f => f.form_name === instrument);
 
   let existingData = { fields: {}, completion_status: null };
+  let dataLoadFailed = false;
   try {
     existingData = await apiGet(`/api/patients/${patientId}/events/${encodeURIComponent(eventName)}/instruments/${encodeURIComponent(instrument)}`);
-  } catch(e) {}
+  } catch(e) {
+    dataLoadFailed = true;
+  }
 
   if (compEl) compEl.value = existingData.completion_status || '';
   renderInstrumentFields(instrument, dictFields, existingData.fields || {});
+  if (dataLoadFailed && statusEl) {
+    statusEl.textContent = '⚠ Could not load saved data — verify connection before saving';
+    statusEl.style.color = 'var(--warn)';
+  }
 }
 
 function renderInstrumentFields(instrument, dictFields, existingFields) {
@@ -2933,8 +3034,11 @@ async function submitInstrumentForm() {
       body: JSON.stringify({ fields, completion_status: completionStatus, instance: 0 }),
     }).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(JSON.stringify(e.detail || e)); }); return r.json(); });
     if (statusEl) statusEl.textContent = '✓ Saved';
-    showPage('page-status');
-    loadRecordStatusDashboard();
+    showToast('Form saved.', 'success');
+    setTimeout(() => {
+      showPage('page-status');
+      loadRecordStatusDashboard();
+    }, 600);
   } catch(e) {
     if (statusEl) statusEl.textContent = 'Error: ' + e.message;
   }
@@ -3075,7 +3179,7 @@ async function saveEditEvent(eventId) {
     }).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.detail || JSON.stringify(e)); }); return r.json(); });
     await loadProjectSetup();
   } catch(e) {
-    alert('Failed to rename event: ' + e.message);
+    showToast('Failed to rename event: ' + e.message, 'error');
   }
 }
 
@@ -3095,7 +3199,7 @@ async function addEvent() {
     if (preview) preview.value = '';
     await loadProjectSetup();
   } catch(e) {
-    alert('Failed to add event: ' + e.message);
+    showToast('Failed to add event: ' + e.message, 'error');
   }
 }
 
@@ -3107,7 +3211,7 @@ async function deleteEventConfirm(eventId) {
     if (!r.ok) { const e = await r.json(); throw new Error(e.detail || JSON.stringify(e)); }
     await loadProjectSetup();
   } catch(e) {
-    alert('Failed to delete event: ' + e.message);
+    showToast('Failed to delete event: ' + e.message, 'error');
   }
 }
 
@@ -3122,13 +3226,13 @@ async function convertEventToFhir(patientId, eventName, btn) {
     });
     if (!r.ok) { const e = await r.json(); throw new Error(e.detail || JSON.stringify(e)); }
     const result = await r.json();
-    showToast(`Converted: ${result.resource_count} FHIR resources generated.`, 'success');
-    showPage('page-fhir');
-    loadFhirIndex();
+    showToast(`${result.resource_count} FHIR resources generated. Open the FHIR Store tab to browse.`, 'success');
+    loadRecordStatusDashboard();
   } catch(e) {
+    showToast('Convert failed: ' + e.message, 'error');
+  } finally {
     btn.textContent = origText;
     btn.style.pointerEvents = '';
-    showToast('Convert failed: ' + e.message, 'error');
   }
 }
 

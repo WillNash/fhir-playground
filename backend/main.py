@@ -45,6 +45,7 @@ from .converter import build_patient, clinical_record_to_fhir_bundle, get_patien
 from .data_dictionary import DATA_DICTIONARY, EVENTS, MISSING_DATA_CODES
 from .db import (
     count_records,
+    count_patients,
     create_event,
     create_patient,
     create_record,
@@ -385,6 +386,7 @@ async def stats() -> dict[str, Any]:
     return {
         "clinical_records": count_records(),
         "fhir_resources": count_resources(),
+        "patients": count_patients(),
     }
 
 

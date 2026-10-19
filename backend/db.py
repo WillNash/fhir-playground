@@ -1330,6 +1330,13 @@ def count_records() -> int:
     return row["n"]
 
 
+def count_patients() -> int:
+    """Return the total number of patients."""
+    with _db_conn() as conn:
+        row = conn.execute("SELECT COUNT(*) AS n FROM patients").fetchone()
+    return int(row["n"])
+
+
 # ---------------------------------------------------------------------------
 # REDCap instrument / event CRUD
 # ---------------------------------------------------------------------------
@@ -1705,6 +1712,7 @@ __all__ = [
     "delete_patient",
     "set_fhir_bundle_id",
     "count_records",
+    "count_patients",
     "get_or_create_record_event",
     "get_instrument_data",
     "upsert_instrument_data",
